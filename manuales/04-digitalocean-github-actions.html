@@ -1,0 +1,492 @@
+<!doctype html>
+<title>Harmony v3 — DigitalOcean + GitHub Actions CI/CD</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2333;
+  --border:#30363d;--border2:#21262d;
+  --accent:#0069ff;--accent2:#2ea043;
+  --text:#e6edf3;--text2:#8b949e;--text3:#484f58;
+  --green:#3fb950;--yellow:#d29922;--red:#f85149;--orange:#e3b341;
+  --code-bg:#0d1117;--code-border:#21262d;
+  font-size:15px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;line-height:1.6;min-height:100vh}
+.wrapper{display:grid;grid-template-columns:250px 1fr;min-height:100vh;max-width:1200px;margin:0 auto}
+.sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;padding:24px 16px;border-right:1px solid var(--border2);background:var(--surface)}
+.content{padding:48px 56px;max-width:840px}
+@media(max-width:900px){.wrapper{grid-template-columns:1fr}.sidebar{display:none}.content{padding:32px 24px}}
+.sidebar-logo{margin-bottom:28px;padding-bottom:16px;border-bottom:1px solid var(--border2)}
+.badge-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.badge{font-size:10px;font-weight:700;letter-spacing:.08em;padding:2px 7px;border-radius:4px;text-transform:uppercase}
+.badge.do{background:var(--accent);color:#fff}
+.badge.gh{background:var(--accent2);color:#fff}
+.sidebar-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px}
+nav ul{list-style:none}
+nav li a{display:block;padding:5px 10px;font-size:12.5px;color:var(--text2);text-decoration:none;border-radius:5px;border-left:2px solid transparent;transition:all .15s}
+nav li a:hover{color:var(--text);background:var(--surface2);border-left-color:var(--accent)}
+nav .section-label{font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);padding:16px 10px 4px}
+.flow-diagram{display:flex;align-items:center;gap:6px;margin:24px 0;flex-wrap:wrap}
+.flow-node{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;color:var(--text)}
+.flow-node.gh-node{border-color:var(--accent2);color:var(--accent2)}
+.flow-node.do-node{border-color:var(--accent);color:var(--accent)}
+.flow-node.srv-node{border-color:#8b5cf6;color:#8b5cf6}
+.flow-arrow{color:var(--text3);font-size:14px}
+.doc-header{margin-bottom:40px;padding-bottom:28px;border-bottom:1px solid var(--border2)}
+.doc-eyebrow{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent2);margin-bottom:12px}
+.doc-eyebrow::before{content:'';display:block;width:18px;height:2px;background:var(--accent2)}
+h1{font-size:28px;font-weight:700;line-height:1.25;text-wrap:balance;color:var(--text);margin-bottom:10px}
+.doc-meta{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
+.meta-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--text2);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:3px 10px}
+.step{margin-bottom:40px}
+.step-header{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
+.step-num{flex-shrink:0;width:30px;height:30px;border-radius:50%;background:var(--accent2);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:2px}
+.step-title{font-size:17px;font-weight:600;color:var(--text);text-wrap:balance}
+.step-body{padding-left:44px}
+.step-body p{color:var(--text2);font-size:14px;margin-bottom:12px;line-height:1.7}
+h2{font-size:20px;font-weight:700;color:var(--text);margin:44px 0 20px;padding-top:12px;border-top:1px solid var(--border2)}
+h3{font-size:15px;font-weight:600;color:var(--text);margin:20px 0 10px}
+pre{background:var(--code-bg);border:1px solid var(--code-border);border-radius:8px;padding:16px 20px;overflow-x:auto;margin:12px 0;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12.5px;line-height:1.65}
+code{font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12.5px}
+pre code{color:#e6edf3;background:none;padding:0}
+.cmd{color:#79c0ff}.cmt{color:#8b949e}.str{color:#a5d6ff}.key{color:#ff7b72}.val{color:#ffa657}.yaml-key{color:#7ee787}.yaml-val{color:#a5d6ff}.yaml-cmt{color:#8b949e}.yaml-str{color:#ffa657}
+:not(pre) > code{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:12px;color:#a5d6ff}
+.box{border-radius:8px;padding:14px 18px;font-size:13.5px;margin:14px 0;display:grid;grid-template-columns:18px 1fr;gap:0 10px;align-items:start}
+.box-icon{font-size:15px;line-height:1.6}
+.box-text{color:var(--text2);line-height:1.6}
+.box-text strong{display:block;margin-bottom:3px;font-size:13px;font-weight:700}
+.box.warn{background:#211a00;border:1px solid #573a00}.box.warn .box-icon{color:var(--yellow)}
+.box.tip{background:#0a1f1a;border:1px solid #0d3a2e}.box.tip .box-icon{color:var(--green)}
+.box.info{background:#000d24;border:1px solid #002060}.box.info .box-icon{color:#4da6ff}
+.box.danger{background:#1a0a0a;border:1px solid #5a1a1a}.box.danger .box-icon{color:var(--red)}
+.file-label{font-size:11px;font-weight:600;color:var(--accent2);text-transform:uppercase;letter-spacing:.08em;padding:6px 12px;background:var(--surface2);border:1px solid var(--border2);border-bottom:none;border-radius:6px 6px 0 0;display:inline-block}
+.file-label+pre{border-radius:0 6px 6px 6px;margin-top:0}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:16px 0}
+th{text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)}
+td{padding:9px 12px;border-bottom:1px solid var(--border2);color:var(--text2);vertical-align:top}
+td:first-child{color:var(--text);font-weight:500}
+p{font-size:14px;line-height:1.7;color:var(--text2);margin-bottom:12px}
+.diff-block{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin:14px 0;font-size:13px}
+.diff-title{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:10px}
+.diff-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.diff-col label{font-size:11px;font-weight:600;color:var(--accent);display:block;margin-bottom:6px}
+.diff-col.gh label{color:var(--accent2)}
+</style>
+<body>
+<div class="wrapper">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-title">Harmony v3 — CI/CD</div>
+    <div class="badge-row"><span class="badge do">DigitalOcean</span><span class="badge gh">GitHub Actions</span></div>
+  </div>
+  <nav>
+    <div class="section-label">Cómo funciona</div>
+    <ul>
+      <li><a href="#flujo">Flujo del pipeline</a></li>
+      <li><a href="#diferencias">Diferencias vs Azure</a></li>
+    </ul>
+    <div class="section-label">Preparación Droplet</div>
+    <ul>
+      <li><a href="#droplet">Droplet + dependencias</a></li>
+      <li><a href="#repo">Clonar repositorio</a></li>
+      <li><a href="#env">Variables de entorno</a></li>
+    </ul>
+    <div class="section-label">GitHub</div>
+    <ul>
+      <li><a href="#ssh-key">Generar clave SSH</a></li>
+      <li><a href="#gh-secrets">Secrets en GitHub</a></li>
+    </ul>
+    <div class="section-label">Pipeline</div>
+    <ul>
+      <li><a href="#workflow-file">Archivo workflow.yml</a></li>
+      <li><a href="#deploy-script">Script deploy.sh</a></li>
+    </ul>
+    <div class="section-label">Go-live</div>
+    <ul>
+      <li><a href="#nginx">Nginx + SSL</a></li>
+      <li><a href="#primer-deploy">Primer despliegue</a></li>
+      <li><a href="#verificar">Probar el pipeline</a></li>
+      <li><a href="#rollback">Rollback</a></li>
+      <li><a href="#monitoreo">Monitoreo</a></li>
+    </ul>
+  </nav>
+</aside>
+<main class="content">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Harmony v3 · CI/CD Automático</div>
+    <h1>DigitalOcean + GitHub Actions<br>— Despliegue automático</h1>
+    <p>Cada push a <code>main</code> compila y despliega automáticamente en el Droplet de DigitalOcean.</p>
+    <div class="doc-meta">
+      <span class="meta-chip">~30 min setup inicial</span>
+      <span class="meta-chip">Ubuntu 22.04 LTS</span>
+      <span class="meta-chip">GitHub Actions</span>
+    </div>
+  </div>
+
+  <h2 id="flujo">Cómo funciona el pipeline</h2>
+  <div class="flow-diagram">
+    <div class="flow-node gh-node">Push a main</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node gh-node">GitHub Actions</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node do-node">SSH al Droplet</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node srv-node">git pull + build + restart</div>
+  </div>
+  <p>El pipeline es idéntico en concepto al de Azure: GitHub Actions hace SSH al Droplet y ejecuta un script que actualiza el código, compila y reinicia el servicio.</p>
+
+  <h2 id="diferencias">Diferencias clave vs Azure</h2>
+  <div class="diff-block">
+    <div class="diff-title">Azure vs DigitalOcean — Lo que cambia en esta guía</div>
+    <div class="diff-row">
+      <div class="diff-col">
+        <label>Azure</label>
+        <ul style="color:var(--text2);font-size:13px;padding-left:16px">
+          <li>Usuario inicial: el que creaste en la VM</li>
+          <li>IP: se asigna desde el panel del NSG</li>
+          <li>Firewall: Network Security Group en el portal</li>
+          <li>Puerto SSH: por defecto 22 (puede cambiar)</li>
+        </ul>
+      </div>
+      <div class="diff-col gh">
+        <label>DigitalOcean</label>
+        <ul style="color:var(--text2);font-size:13px;padding-left:16px">
+          <li>Usuario inicial: <code>root</code></li>
+          <li>IP: visible en el panel del Droplet</li>
+          <li>Firewall: Cloud Firewall en Networking</li>
+          <li>Puerto SSH: siempre 22</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <p>Todo lo demás (workflow YAML, deploy.sh, secrets de GitHub) es <strong>exactamente igual</strong> al manual de Azure CI/CD.</p>
+
+  <h2 id="droplet">Paso 1 — Preparar el Droplet</h2>
+  <p>Si ya tienes el Droplet con el despliegue manual funcionando, salta al <a href="#repo">Paso 2</a>. Si es un Droplet nuevo:</p>
+  <pre><code><span class="cmt"># Conectar al Droplet</span>
+<span class="cmd">ssh</span> root@TU_IP_DROPLET
+
+<span class="cmt"># Actualizar e instalar dependencias</span>
+<span class="cmd">apt</span> update && apt upgrade -y
+<span class="cmd">apt</span> install -y git curl wget build-essential nginx certbot python3-certbot-nginx redis-server
+
+<span class="cmt"># Go 1.22</span>
+<span class="cmd">wget</span> https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
+<span class="cmd">tar</span> -C /usr/local -xzf go1.22.5.linux-amd64.tar.gz
+<span class="cmd">echo</span> 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/go.sh
+<span class="cmd">source</span> /etc/profile.d/go.sh
+
+<span class="cmt"># Node.js 20</span>
+<span class="cmd">curl</span> -fsSL https://deb.nodesource.com/setup_20.x | bash -
+<span class="cmd">apt</span> install -y nodejs
+
+<span class="cmt"># PostgreSQL 16</span>
+<span class="cmd">/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh</span> -y
+<span class="cmd">apt</span> install -y postgresql-16
+<span class="cmd">systemctl</span> enable --now postgresql redis-server</code></pre>
+
+  <h2 id="repo">Paso 2 — Clonar el repositorio</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">1</div><div class="step-title">Preparar la estructura y clonar el código</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Crear estructura de directorios</span>
+<span class="cmd">useradd</span> --system --no-create-home --shell /bin/false harmony
+<span class="cmd">mkdir</span> -p /opt/harmony/bin /opt/harmony/uploads
+<span class="cmd">mkdir</span> -p /var/www/harmony
+
+<span class="cmt"># Clonar el repositorio</span>
+<span class="cmd">git</span> clone https://github.com/TU_ORG/harmony-v3.git /opt/harmony/repo
+
+<span class="cmt"># Permisos</span>
+<span class="cmd">chown</span> -R harmony:harmony /opt/harmony
+<span class="cmd">chown</span> -R www-data:www-data /var/www/harmony</code></pre>
+      <div class="box info"><span class="box-icon">ℹ</span><div class="box-text"><strong>Repositorio privado:</strong> Ve a tu repo en GitHub → <em>Settings → Deploy Keys → Add deploy key</em>. Pega el contenido de <code>cat ~/.ssh/id_rsa.pub</code> del Droplet (o genera uno con <code>ssh-keygen -t ed25519</code>). Marca <em>Allow write access</em> desactivado (solo lectura).</div></div>
+    </div>
+  </div>
+
+  <h2 id="env">Paso 3 — Variables de entorno y base de datos</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">2</div><div class="step-title">Crear el .env y la base de datos PostgreSQL</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Crear .env</span>
+<span class="cmd">nano</span> /opt/harmony/.env</code></pre>
+      <pre><code><span class="key">APP_ENV</span>=<span class="val">production</span>
+<span class="key">PORT</span>=<span class="val">8080</span>
+<span class="key">FRONTEND_URL</span>=<span class="val">https://harmony.tuempresa.com</span>
+
+<span class="key">DB_HOST</span>=<span class="val">localhost</span>
+<span class="key">DB_PORT</span>=<span class="val">5432</span>
+<span class="key">DB_USER</span>=<span class="val">harmony</span>
+<span class="key">DB_PASS</span>=<span class="val">TuPasswordAqui</span>
+<span class="key">DB_SSLMODE</span>=<span class="val">disable</span>
+
+<span class="key">JWT_SECRET</span>=<span class="val">&lt;openssl rand -hex 32&gt;</span>
+<span class="key">JWT_EXPIRY_HOURS</span>=<span class="val">24</span>
+
+<span class="key">ANTHROPIC_KEY</span>=<span class="val">sk-ant-api03-...</span>
+<span class="key">REDIS_URL</span>=<span class="val">redis://localhost:6379</span>
+<span class="key">UPLOADS_DIR</span>=<span class="val">/opt/harmony/uploads</span></code></pre>
+      <pre><code><span class="cmd">chmod</span> 600 /opt/harmony/.env
+<span class="cmd">chown</span> harmony:harmony /opt/harmony/.env
+
+<span class="cmt"># Base de datos</span>
+<span class="cmd">sudo</span> -u postgres psql << 'EOF'
+<span class="key">CREATE</span> USER harmony <span class="key">WITH</span> PASSWORD <span class="str">'TuPasswordAqui'</span>;
+<span class="key">CREATE</span> DATABASE harmony_system <span class="key">OWNER</span> harmony;
+<span class="key">ALTER</span> USER harmony CREATEDB;
+\q
+EOF</code></pre>
+    </div>
+  </div>
+
+  <h2 id="ssh-key">Paso 4 — Clave SSH para GitHub Actions</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">3</div><div class="step-title">Generar la clave SSH en el Droplet</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Generar par de claves dedicado para CI/CD</span>
+<span class="cmd">ssh-keygen</span> -t ed25519 -C "github-actions-do" -f /root/.ssh/github_actions_deploy -N ""
+
+<span class="cmt"># Autorizar la clave pública en este mismo servidor</span>
+<span class="cmd">cat</span> /root/.ssh/github_actions_deploy.pub >> /root/.ssh/authorized_keys
+<span class="cmd">chmod</span> 600 /root/.ssh/authorized_keys
+
+<span class="cmt"># Mostrar la clave privada — CÓPIALA COMPLETA para el Paso 5</span>
+<span class="cmd">cat</span> /root/.ssh/github_actions_deploy
+<span class="cmt"># -----BEGIN OPENSSH PRIVATE KEY-----</span>
+<span class="cmt"># b3BlbnNzaC1rZXktdjEAAAA...    ← todo este bloque va en el Secret de GitHub</span>
+<span class="cmt"># -----END OPENSSH PRIVATE KEY-----</span></code></pre>
+      <div class="box danger"><span class="box-icon">✗</span><div class="box-text">La clave privada solo va en los Secrets de GitHub. Nunca la guardes en el repositorio ni en ningún archivo de texto.</div></div>
+    </div>
+  </div>
+
+  <h2 id="gh-secrets">Paso 5 — Secrets en GitHub</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">4</div><div class="step-title">Agregar los 3 secrets en el repositorio</div></div>
+    <div class="step-body">
+      <p>Ve a tu repositorio → <strong>Settings → Secrets and variables → Actions → New repository secret</strong>.</p>
+      <table>
+        <thead><tr><th>Secret Name</th><th>Valor a pegar</th></tr></thead>
+        <tbody>
+          <tr><td><code>SERVER_HOST</code></td><td>La IP pública de tu Droplet (ej: <code>167.99.x.x</code>). La encuentras en el panel de DigitalOcean bajo el Droplet.</td></tr>
+          <tr><td><code>SERVER_USER</code></td><td><code>root</code> — en DigitalOcean el primer acceso siempre es como root.</td></tr>
+          <tr><td><code>SSH_PRIVATE_KEY</code></td><td>Copia el contenido completo del archivo <code>/root/.ssh/github_actions_deploy</code>, incluyendo las líneas <code>-----BEGIN...</code> y <code>-----END...</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h2 id="workflow-file">Paso 6 — Archivo del workflow de GitHub Actions</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">5</div><div class="step-title">Crear .github/workflows/deploy.yml en tu repositorio local</div></div>
+    <div class="step-body">
+      <div class="file-label">.github/workflows/deploy.yml</div>
+      <pre><code><span class="yaml-key">name</span>: <span class="yaml-val">Deploy Harmony v3</span>
+
+<span class="yaml-key">on</span>:
+  <span class="yaml-key">push</span>:
+    <span class="yaml-key">branches</span>:
+      - <span class="yaml-val">main</span>
+
+<span class="yaml-key">jobs</span>:
+  <span class="yaml-key">deploy</span>:
+    <span class="yaml-key">name</span>: <span class="yaml-val">Deploy to DigitalOcean Droplet</span>
+    <span class="yaml-key">runs-on</span>: <span class="yaml-val">ubuntu-latest</span>
+    <span class="yaml-key">timeout-minutes</span>: <span class="yaml-val">15</span>
+
+    <span class="yaml-key">steps</span>:
+      - <span class="yaml-key">name</span>: <span class="yaml-val">Deploy via SSH</span>
+        <span class="yaml-key">uses</span>: <span class="yaml-val">appleboy/ssh-action@v1.0.3</span>
+        <span class="yaml-key">with</span>:
+          <span class="yaml-key">host</span>: <span class="yaml-val">${{ secrets.SERVER_HOST }}</span>
+          <span class="yaml-key">username</span>: <span class="yaml-val">${{ secrets.SERVER_USER }}</span>
+          <span class="yaml-key">key</span>: <span class="yaml-val">${{ secrets.SSH_PRIVATE_KEY }}</span>
+          <span class="yaml-key">script</span>: <span class="yaml-val">|</span>
+            <span class="yaml-val">bash /opt/harmony/deploy.sh 2>&amp;1</span></code></pre>
+      <div class="box info"><span class="box-icon">ℹ</span><div class="box-text">Este workflow es <strong>idéntico</strong> al de Azure. Los secrets tienen el mismo nombre en ambos. Si usas Azure o DigitalOcean, el .yml no cambia.</div></div>
+    </div>
+  </div>
+
+  <h2 id="deploy-script">Paso 7 — Script de despliegue en el Droplet</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">6</div><div class="step-title">Crear el script /opt/harmony/deploy.sh en el servidor</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">nano</span> /opt/harmony/deploy.sh</code></pre>
+      <div class="file-label">/opt/harmony/deploy.sh</div>
+      <pre><code>#!/bin/bash
+set -e
+
+export PATH=$PATH:/usr/local/go/bin
+REPO_DIR="/opt/harmony/repo"
+BIN_DIR="/opt/harmony/bin"
+WEB_DIR="/var/www/harmony"
+
+echo "=== [1/5] Actualizando código ==="
+cd "$REPO_DIR"
+git pull origin main
+
+echo "=== [2/5] Compilando API Go ==="
+cd "$REPO_DIR/api"
+go mod download
+go build -ldflags="-s -w" -o "$BIN_DIR/harmony-api-new" ./cmd/server/main.go
+mv "$BIN_DIR/harmony-api-new" "$BIN_DIR/harmony-api"
+chown harmony:harmony "$BIN_DIR/harmony-api"
+
+echo "=== [3/5] Compilando Frontend React ==="
+cd "$REPO_DIR/web"
+npm ci --prefer-offline
+npm run build
+
+echo "=== [4/5] Actualizando archivos estáticos ==="
+rm -rf "$WEB_DIR"/*
+cp -r dist/* "$WEB_DIR/"
+chown -R www-data:www-data "$WEB_DIR"
+
+echo "=== [5/5] Reiniciando servicio ==="
+systemctl restart harmony-api
+systemctl status harmony-api --no-pager
+
+echo "=== Deploy completado: $(date) ==="</code></pre>
+      <pre><code><span class="cmd">chmod</span> +x /opt/harmony/deploy.sh</code></pre>
+    </div>
+  </div>
+
+  <h2 id="nginx">Paso 8 — Nginx + SSL en el Droplet</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">7</div><div class="step-title">Configurar Nginx como proxy reverso</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">nano</span> /etc/nginx/sites-available/harmony</code></pre>
+      <pre><code><span class="key">server</span> {
+    listen 80;
+    server_name harmony.tuempresa.com;
+    return 301 https://$host$request_uri;
+}
+
+<span class="key">server</span> {
+    listen 443 ssl http2;
+    server_name harmony.tuempresa.com;
+
+    ssl_certificate /etc/letsencrypt/live/harmony.tuempresa.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/harmony.tuempresa.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+
+    root /var/www/harmony;
+    index index.html;
+
+    location / { try_files $uri $uri/ /index.html; }
+
+    location ~* \.(js|css|png|jpg|ico|svg|woff2)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        client_max_body_size 50M;
+    }
+
+    location /ws {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400s;
+    }
+}</code></pre>
+      <pre><code><span class="cmd">ln</span> -s /etc/nginx/sites-available/harmony /etc/nginx/sites-enabled/
+<span class="cmd">rm</span> -f /etc/nginx/sites-enabled/default
+<span class="cmd">nginx</span> -t && systemctl start nginx
+
+<span class="cmt"># SSL con Let's Encrypt</span>
+<span class="cmd">certbot</span> --nginx -d harmony.tuempresa.com
+
+<span class="cmt"># Servicio systemd</span>
+<span class="cmd">nano</span> /etc/systemd/system/harmony-api.service</code></pre>
+      <pre><code><span class="key">[Unit]</span>
+Description=Harmony v3 API
+After=network.target postgresql.service redis.service
+
+<span class="key">[Service]</span>
+Type=simple
+User=harmony
+Group=harmony
+WorkingDirectory=/opt/harmony
+EnvironmentFile=/opt/harmony/.env
+ExecStart=/opt/harmony/bin/harmony-api
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+<span class="key">[Install]</span>
+WantedBy=multi-user.target</code></pre>
+      <pre><code><span class="cmd">systemctl</span> daemon-reload
+<span class="cmd">systemctl</span> enable harmony-api</code></pre>
+    </div>
+  </div>
+
+  <h2 id="primer-deploy">Paso 9 — Primer despliegue manual</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">8</div><div class="step-title">Ejecutar el deploy.sh una vez antes de activar el pipeline</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Primer build manual</span>
+<span class="cmd">bash</span> /opt/harmony/deploy.sh
+
+<span class="cmt"># Iniciar el servicio por primera vez</span>
+<span class="cmd">systemctl</span> start harmony-api
+<span class="cmd">systemctl</span> status harmony-api
+
+<span class="cmt"># Verificar que la app responde</span>
+<span class="cmd">curl</span> https://harmony.tuempresa.com/api/system-config</code></pre>
+    </div>
+  </div>
+
+  <h2 id="verificar">Paso 10 — Probar el pipeline</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">9</div><div class="step-title">Hacer commit del workflow y verificar</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># En tu máquina local</span>
+<span class="cmd">git</span> add .github/workflows/deploy.yml
+<span class="cmd">git</span> commit -m "ci: deploy automático en DigitalOcean con GitHub Actions"
+<span class="cmd">git</span> push origin main</code></pre>
+      <p>Ve a tu repositorio → <strong>Actions</strong>. El workflow debería aparecer corriendo. Clic en él para ver los pasos en tiempo real.</p>
+      <div class="box tip"><span class="box-icon">✓</span><div class="box-text"><strong>El deploy demora ~2-3 minutos.</strong> Cuando ves la marca ✓ verde en GitHub Actions, el código nuevo ya está en producción en tu Droplet.</div></div>
+      <div class="box warn"><span class="box-icon">⚠</span><div class="box-text"><strong>Si falla con "permission denied":</strong> El usuario <code>root</code> necesita tener <code>/root/.ssh/authorized_keys</code> con la clave pública correcta. Verifica con: <code>cat /root/.ssh/authorized_keys</code></div></div>
+    </div>
+  </div>
+
+  <h2 id="rollback">Rollback de emergencia</h2>
+  <pre><code><span class="cmt"># Opción 1: Revertir en Git → el pipeline se activa con el código anterior</span>
+<span class="cmd">git</span> revert HEAD
+<span class="cmd">git</span> push origin main
+
+<span class="cmt"># Opción 2: Rollback manual directo en el Droplet</span>
+<span class="cmd">ssh</span> root@TU_IP_DROPLET
+<span class="cmd">cd</span> /opt/harmony/repo
+<span class="cmd">git</span> log --oneline -5               <span class="cmt"># ver los últimos 5 commits</span>
+<span class="cmd">git</span> checkout HASH_DEL_COMMIT_BUENO  <span class="cmt"># volver al commit anterior</span>
+<span class="cmd">bash</span> /opt/harmony/deploy.sh         <span class="cmt"># recompilar y reiniciar</span></code></pre>
+
+  <h2 id="monitoreo">Monitoreo del Droplet</h2>
+  <pre><code><span class="cmt"># Estado del servicio</span>
+<span class="cmd">systemctl</span> status harmony-api
+
+<span class="cmt"># Logs en tiempo real</span>
+<span class="cmd">journalctl</span> -u harmony-api -f
+
+<span class="cmt"># Recursos del Droplet</span>
+<span class="cmd">htop</span>
+
+<span class="cmt"># Activar monitoreo nativo de DigitalOcean (gráficas en el panel)</span>
+<span class="cmd">curl</span> -sSL https://repos.insights.digitalocean.com/install.sh | bash</code></pre>
+  <div class="box tip"><span class="box-icon">✓</span><div class="box-text"><strong>Monitoreo en DO</strong>: DigitalOcean tiene alertas nativas gratuitas. En el panel: <em>Droplet → Graphs</em>. Activa alertas en <em>Monitoring → Create Alert Policy</em> para CPU &gt; 80% o memoria alta.</div></div>
+</main>
+</div>
+</body>

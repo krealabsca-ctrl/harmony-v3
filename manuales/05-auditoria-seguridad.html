@@ -1,0 +1,618 @@
+<title>Harmony v3 — Security Audit Report</title>
+<style>
+:root{
+  --bg:#09090f;--surface:#0f1018;--card:#13151e;--card2:#171a26;--border:#1d2033;
+  --text:#dde3ef;--muted:#7c87a4;--accent:#4a9eff;
+  --crit:#ff4040;--high:#ff7a30;--med:#f5c840;--low:#3dd9a0;
+  --mono:ui-monospace,'Cascadia Code','Source Code Pro',Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,'Segoe UI',Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.6}
+/* Summary bar */
+.sbar{position:sticky;top:0;z-index:100;background:rgba(9,9,15,.95);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--border);padding:9px 24px;display:flex;align-items:center;gap:20px}
+.sbar .proj{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;padding-right:12px;border-right:1px solid var(--border)}
+.sstat{display:flex;flex-direction:column;align-items:center;gap:1px}
+.sstat .n{font-family:var(--mono);font-size:20px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.sstat .l{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.sstat.c .n{color:var(--crit)}.sstat.h .n{color:var(--high)}.sstat.m .n{color:var(--med)}.sstat.lo .n{color:var(--low)}
+.sep{width:1px;height:32px;background:var(--border)}
+.spacer{flex:1}
+.bardate{font-family:var(--mono);font-size:11px;color:var(--muted)}
+/* Layout */
+.layout{display:grid;grid-template-columns:252px 1fr}
+/* Sidebar */
+.sidebar{position:sticky;top:46px;height:calc(100vh - 46px);overflow-y:auto;
+  background:var(--surface);border-right:1px solid var(--border);padding:14px 0}
+.sidebar::-webkit-scrollbar{width:3px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sb-head{padding:4px 12px 10px;font-family:var(--mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted)}
+.filters{display:flex;flex-wrap:wrap;gap:4px;padding:0 10px 12px;border-bottom:1px solid var(--border)}
+.fbtn{background:none;border:1px solid var(--border);color:var(--muted);font-family:var(--mono);
+  font-size:10px;letter-spacing:.08em;padding:3px 8px;border-radius:3px;cursor:pointer;transition:all .15s}
+.fbtn:hover{color:var(--text);border-color:var(--muted)}
+.fbtn.act{font-weight:700}
+.fbtn.act.all{border-color:var(--accent);color:var(--accent);background:rgba(74,158,255,.1)}
+.fbtn.act.c{border-color:var(--crit);color:var(--crit);background:rgba(255,64,64,.1)}
+.fbtn.act.h{border-color:var(--high);color:var(--high);background:rgba(255,122,48,.1)}
+.fbtn.act.m{border-color:var(--med);color:var(--med);background:rgba(245,200,64,.1)}
+.fbtn.act.lo{border-color:var(--low);color:var(--low);background:rgba(61,217,160,.1)}
+.sb-sec-title{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);padding:10px 12px 4px}
+.sitem{display:flex;align-items:center;gap:7px;padding:5px 10px;border-radius:4px;
+  cursor:pointer;transition:background .1s;text-decoration:none}
+.sitem:hover{background:var(--card)}
+.dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.dot.c{background:var(--crit)}.dot.h{background:var(--high)}.dot.m{background:var(--med)}.dot.lo{background:var(--low)}
+.sid{font-family:var(--mono);font-size:9px;color:var(--muted);flex-shrink:0;width:52px}
+.stitle{font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+/* Main */
+.main{padding:32px 40px;min-width:0}
+/* Header */
+.hdr{margin-bottom:36px;padding-bottom:28px;border-bottom:1px solid var(--border)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:10px}
+.htitle{font-family:var(--mono);font-size:26px;font-weight:700;line-height:1.2;
+  margin-bottom:6px;text-wrap:balance}
+.hsub{color:var(--muted);font-size:13px;max-width:60ch;line-height:1.75;margin-bottom:20px}
+.meta{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px}
+.mitem{padding:12px 14px;background:var(--card);border:1px solid var(--border);border-radius:5px}
+.ml{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:3px}
+.mv{font-family:var(--mono);font-size:12px;color:var(--text);font-weight:600}
+/* Risk bar */
+.rbar{display:flex;height:5px;border-radius:3px;overflow:hidden;gap:2px;margin:20px 0 6px}
+.rs{border-radius:2px}
+.rs.c{background:var(--crit)}.rs.h{background:var(--high)}.rs.m{background:var(--med)}.rs.lo{background:var(--low)}
+.rl{display:flex;gap:16px;font-family:var(--mono);font-size:10px;color:var(--muted)}
+.rl span{display:flex;align-items:center;gap:5px}
+.rl span::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%}
+.rl .rc::before{background:var(--crit)}.rl .rh::before{background:var(--high)}
+.rl .rm::before{background:var(--med)}.rl .rlo::before{background:var(--low)}
+/* Severity sections */
+.sevsec{margin-bottom:36px}
+.sevsec.hidden{display:none}
+.sech{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;
+  border-bottom:1px solid var(--border)}
+.sebadge{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;padding:4px 10px;border-radius:3px}
+.sebadge.c{background:rgba(255,64,64,.12);color:var(--crit);border:1px solid rgba(255,64,64,.25)}
+.sebadge.h{background:rgba(255,122,48,.12);color:var(--high);border:1px solid rgba(255,122,48,.25)}
+.sebadge.m{background:rgba(245,200,64,.12);color:var(--med);border:1px solid rgba(245,200,64,.25)}
+.sebadge.lo{background:rgba(61,217,160,.12);color:var(--low);border:1px solid rgba(61,217,160,.25)}
+.sename{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)}
+.secnt{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:auto}
+/* Finding cards */
+.fc{background:var(--card);border:1px solid var(--border);border-radius:5px;
+  margin-bottom:10px;overflow:hidden;transition:border-color .15s}
+.fc:hover{border-color:rgba(124,135,164,.4)}
+.fc.hidden{display:none}
+.fc.c{border-left:3px solid var(--crit)}.fc.h{border-left:3px solid var(--high)}
+.fc.m{border-left:3px solid var(--med)}.fc.lo{border-left:3px solid var(--low)}
+.fhd{display:flex;align-items:center;gap:10px;padding:13px 16px;cursor:pointer;user-select:none}
+.fid{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;
+  color:var(--muted);flex-shrink:0;width:62px}
+.fname{font-family:var(--mono);font-size:12.5px;font-weight:600;color:var(--text);flex:1}
+.ffile{font-family:var(--mono);font-size:10px;color:var(--accent);opacity:.7;flex-shrink:0}
+.fcat{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);background:var(--border);padding:2px 6px;border-radius:2px;flex-shrink:0}
+.chev{color:var(--muted);font-size:11px;flex-shrink:0;transition:transform .2s}
+.fc.open .chev{transform:rotate(90deg)}
+.fbody{display:none;padding:0 16px 16px;border-top:1px solid var(--border)}
+.fc.open .fbody{display:block}
+.fdesc{color:var(--text);font-size:13px;line-height:1.75;margin:13px 0 14px;max-width:72ch}
+.clabel{font-family:var(--mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:5px}
+.cblock{background:#060a12;border:1px solid var(--border);border-radius:4px;padding:13px 15px;
+  font-family:var(--mono);font-size:11.5px;line-height:1.7;overflow-x:auto;margin:0 0 12px;
+  color:#b8c6e0;tab-size:2;white-space:pre}
+.fixbox{background:rgba(61,217,160,.04);border:1px solid rgba(61,217,160,.15);border-radius:4px;
+  padding:13px 15px;font-size:13px;line-height:1.75;color:var(--text);margin-top:14px}
+.flabel{font-family:var(--mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--low);margin-bottom:6px}
+.kw{color:#79b8ff}.fn{color:#b8a9f8}.str{color:#f8c555}.cmt{color:#4a5568}
+.num{color:#f78c6c}.ty{color:#7ccdea}.bad{color:var(--crit);font-weight:600}
+.good{color:var(--low)}
+@media(max-width:768px){
+  .layout{grid-template-columns:1fr}.sidebar{display:none}.main{padding:20px 16px}
+  .meta{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+
+<div class="sbar">
+  <span class="proj">Harmony v3</span>
+  <div class="sstat c"><span class="n" id="cnt-c">7</span><span class="l">Crítica</span></div>
+  <div class="sep"></div>
+  <div class="sstat h"><span class="n" id="cnt-h">13</span><span class="l">Alta</span></div>
+  <div class="sep"></div>
+  <div class="sstat m"><span class="n" id="cnt-m">12</span><span class="l">Media</span></div>
+  <div class="sep"></div>
+  <div class="sstat lo"><span class="n" id="cnt-lo">4</span><span class="l">Baja</span></div>
+  <div class="spacer"></div>
+  <span class="bardate">Auditoría · 2026-07-01</span>
+</div>
+
+<div class="layout">
+<nav class="sidebar" id="sidebar">
+  <div class="sb-head">Harmony v3 · 36 hallazgos</div>
+  <div class="filters">
+    <button class="fbtn act all" onclick="filter('all')">Todos</button>
+    <button class="fbtn c" onclick="filter('c')">Crítica</button>
+    <button class="fbtn h" onclick="filter('h')">Alta</button>
+    <button class="fbtn m" onclick="filter('m')">Media</button>
+    <button class="fbtn lo" onclick="filter('lo')">Baja</button>
+  </div>
+  <div id="sb-list"></div>
+</nav>
+
+<main class="main">
+<div class="hdr">
+  <div class="eyebrow">Informe de Auditoría de Seguridad</div>
+  <div class="htitle">Harmony v3 — Revisión de Código Completa</div>
+  <div class="hsub">Análisis estático de 4 dimensiones: seguridad de API, capa de base de datos, concurrencia/performance y frontend React. 36 hallazgos únicos identificados sobre Go 1.22 + React 19.</div>
+  <div class="meta">
+    <div class="mitem"><div class="ml">Proyecto</div><div class="mv">Harmony v3</div></div>
+    <div class="mitem"><div class="ml">Stack</div><div class="mv">Go/Gin + React</div></div>
+    <div class="mitem"><div class="ml">Fecha</div><div class="mv">2026-07-01</div></div>
+    <div class="mitem"><div class="ml">Total hallazgos</div><div class="mv">36 únicos</div></div>
+  </div>
+  <div class="rbar">
+    <div class="rs c" style="flex:7"></div>
+    <div class="rs h" style="flex:13"></div>
+    <div class="rs m" style="flex:12"></div>
+    <div class="rs lo" style="flex:4"></div>
+  </div>
+  <div class="rl">
+    <span class="rc">7 Crítica</span>
+    <span class="rh">13 Alta</span>
+    <span class="rm">12 Media</span>
+    <span class="rlo">4 Baja</span>
+  </div>
+</div>
+
+<div id="content"></div>
+</main>
+</div>
+
+<script>
+const F=[
+// ===== CRÍTICA =====
+{id:"CRIT-01",s:"c",cat:"Backend API",title:"Mass Assignment — pub handlers",
+file:"handlers/pub.go:231",
+desc:"Los handlers <code>UpdatePubPost</code>, <code>UpdatePubCampaign</code> y <code>UpdatePubAgent</code> deserializan el body directamente a <code>map[string]any</code> y lo pasan sin filtrar a <code>db.Updates(req)</code>. GORM actualizará <em>cualquier columna</em> que el cliente envíe — incluyendo <code>company_id</code>, <code>created_by</code>, <code>deleted_at</code>, o timestamps.",
+code:`<span class="cmt">// pub.go ~línea 229 — VULNERABLE</span>
+<span class="kw">var</span> req <span class="kw">map</span>[<span class="ty">string</span>]<span class="kw">any</span>
+c.ShouldBindJSON(&amp;req)
+<span class="bad">db.Model(&amp;post).Updates(req)</span>  <span class="cmt">// acepta cualquier campo del cliente</span>`,
+fix:"Reemplazar <code>map[string]any</code> por un struct tipado con solo los campos editables (<code>Title</code>, <code>Caption</code>, etc.). Incluir además el filtro <code>company_id</code> en el WHERE del <code>db.First()</code> (ver CRIT-02)."},
+
+{id:"CRIT-02",s:"c",cat:"Backend API",title:"IDOR — 5 pub handlers sin filtro company_id",
+file:"handlers/pub.go",
+desc:"<code>UpdatePubPost</code>, <code>DeletePubPost</code>, <code>UpdatePubCampaign</code>, <code>UpdatePubAgent</code>, <code>DeletePubAgent</code> y <code>ListPubLeads</code> buscan/listan registros por ID sin verificar que pertenezcan a la empresa autenticada. Un usuario de la empresa A puede leer, modificar o eliminar datos de la empresa B si conoce el ID.",
+code:`<span class="cmt">// VULNERABLE — solo filtra por ID</span>
+<span class="kw">var</span> post PubPost
+<span class="bad">db.First(&amp;post, id)</span>  <span class="cmt">// sin WHERE company_id</span>
+
+<span class="cmt">// ListPubLeads — devuelve registros de TODAS las empresas</span>
+<span class="bad">db.Order("created_at DESC").Find(&amp;leads)</span>`,
+fix:`Agregar filtro de empresa en cada lookup:<br><code>db.Where("id = ? AND company_id = ?", id, companyID).First(&amp;post)</code><br>Y en listados: <code>db.Where("company_id = ?", companyID).Find(&amp;leads)</code>`},
+
+{id:"CRIT-03",s:"c",cat:"Backend API",title:"Goroutines sin límite — DoS por agotamiento de memoria",
+file:"handlers/inbound.go:150",
+desc:"Cada mensaje entrante lanza una goroutine <code>go runBotFlow(...)</code> sin semáforo, worker pool ni context de cancelación. Con tráfico sostenido de 500+ msg/hora el servidor acumula goroutines hasta OOM. Un atacante puede enviar mensajes en ráfaga para forzar crash.",
+code:`<span class="cmt">// inbound.go:150</span>
+<span class="bad">go runBotFlow(db, &amp;conv, &amp;msg, isNewConv)</span>
+<span class="cmt">// sin semáforo — crea goroutine ilimitadamente</span>`,
+fix:`Usar semáforo (canal buffered):<br><code>var botSem = make(chan struct{}, 10)</code><br>Luego: <code>botSem &lt;- struct{}{}; go func(){ defer func(){&lt;-botSem}(); runBotFlow(...) }()</code>`},
+
+{id:"CRIT-04",s:"c",cat:"Backend API",title:"HTTP client sin timeout + resp.Body sin cerrar",
+file:"handlers/pub_content.go:168",
+desc:"Las llamadas HTTP a Anthropic y OpenAI en <code>pub_content.go</code> usan el <code>httpClient</code> global sin timeout. Si la API remota cuelga, la goroutine espera indefinidamente. Adicionalmente, <code>resp.Body</code> nunca se cierra (<code>defer resp.Body.Close()</code> ausente), causando file descriptor leak que agota los descriptores del OS en pocas horas.",
+code:`<span class="cmt">// pub_content.go:168 — sin timeout, sin defer Body.Close()</span>
+req, _ := http.NewRequest("POST", claudeURL, bytes.NewBuffer(body))
+<span class="bad">resp, _ := httpClient.Do(req)</span>     <span class="cmt">// httpClient global, sin Timeout</span>
+<span class="bad">respBytes, _ := io.ReadAll(resp.Body)</span> <span class="cmt">// Body nunca cerrado</span>`,
+fix:`<code>client := &amp;http.Client{Timeout: 30 * time.Second}</code><br>Antes de leer: <code>defer resp.Body.Close()</code>`},
+
+{id:"CRIT-05",s:"c",cat:"Frontend",title:"JWT expuesto en URL del WebSocket",
+file:"web/src/hooks/useWebSocket.ts:13",
+desc:"El token JWT se transmite como query string en la URL del WebSocket. Los query strings se registran en logs de Nginx, historial del navegador, headers Referer y herramientas de APM. Cualquier log accesible a un tercero expone el token completo.",
+code:`<span class="cmt">// useWebSocket.ts:13 — token en URL</span>
+socket = <span class="kw">new</span> WebSocket(<span class="str">`/ws?token=<span class="bad">${token}</span>`</span>)
+<span class="cmt">// ← aparece en nginx access.log, browser history, Datadog/APM</span>`,
+fix:"Implementar endpoint <code>POST /auth/ws-ticket</code> que devuelva un token de un solo uso (TTL 10s, almacenado en Redis). El cliente conecta con <code>/ws?ticket=...</code> — el ticket expira inmediatamente al validarse, sin valor de replay."},
+
+{id:"CRIT-06",s:"c",cat:"Frontend",title:"JWT almacenado en localStorage (vulnerable a XSS)",
+file:"web/src/stores/authStore.ts:34",
+desc:"Zustand persiste el token JWT en <code>localStorage</code> con la clave <code>'harmony-auth'</code>. Cualquier XSS en la aplicación puede extraerlo con <code>localStorage.getItem('harmony-auth')</code>. Dado que se encontraron 8+ usos de <code>dangerouslySetInnerHTML</code> sin sanitizar (HIGH-04), el riesgo de XSS→robo de token es concreto.",
+code:`<span class="cmt">// authStore.ts:34</span>
+persist((set) => ({ token: <span class="kw">null</span>, ... }),
+  { name: <span class="str"><span class="bad">'harmony-auth'</span></span> }  <span class="cmt">// → localStorage, accesible por JS</span>
+)`,
+fix:"Mover el JWT a una cookie <code>HttpOnly; Secure; SameSite=Strict</code>. El backend setea la cookie en login; el frontend no toca el token. Eliminar el <code>persist()</code> de Zustand — guardar solo datos no sensibles del usuario (<code>name</code>, <code>role</code>)."},
+
+{id:"CRIT-07",s:"c",cat:"Infraestructura",title:"TLS deshabilitado por defecto (DB_SSLMODE=disable)",
+file:"api/internal/config/config.go:46",
+desc:"El valor por defecto de <code>DB_SSLMODE</code> es <code>'disable'</code>. En producción, si el operador no setea explícitamente la variable, toda la comunicación PostgreSQL — incluyendo credenciales y datos de clientes — viaja en texto plano por la red.",
+code:`<span class="cmt">// config.go:46</span>
+DBSSLMode: getEnv(<span class="str">"DB_SSLMODE"</span>, <span class="bad"><span class="str">"disable"</span></span>),
+<span class="cmt">// default inseguro — credenciales y datos en claro si no se configura</span>`,
+fix:`Cambiar default a <code>"require"</code> y agregar guardia en startup:<br><code>if cfg.AppEnv == "production" &amp;&amp; cfg.DBSSLMode == "disable" { log.Fatal("FATAL: DB_SSLMODE=disable en producción") }</code>`},
+
+// ===== ALTA =====
+{id:"HIGH-01",s:"h",cat:"Backend API",title:"Race condition — WebSocket connCount no atómico",
+file:"ws/hub.go",
+desc:"La verificación del límite de conexiones (<code>connCount &gt;= maxConnectionsPerHub</code>) y el incremento <code>connCount.Add(1)</code> están separados por el envío al canal <code>register</code>. Múltiples goroutines pueden pasar el check simultáneamente antes de que ninguna incremente el contador, superando el límite de 5000.",
+code:`<span class="cmt">// hub.go — window entre check e incremento</span>
+<span class="kw">if</span> GlobalHub.connCount.Load() >= maxConnectionsPerHub { <span class="cmt">// check</span>
+    c.AbortWithStatusJSON(503, ...)
+    <span class="kw">return</span>
+}
+GlobalHub.register <- cl  <span class="cmt">// ← race aquí</span>
+h.connCount.Add(1)         <span class="cmt">// incremento tardío</span>`,
+fix:"Usar CAS: <code>for !h.connCount.CompareAndSwap(cur, cur+1) { cur = h.connCount.Load() }</code>. Si <code>cur &gt;= max</code> rechazar antes del CAS."},
+
+{id:"HIGH-02",s:"h",cat:"Backend API",title:"40+ errores silenciados con _, err := ",
+file:"handlers/ (múltiples)",
+desc:"Al menos 40 llamadas en los handlers ignoran el error de retorno con <code>_, _ :=</code>. Incluye casos críticos: <code>bcrypt.GenerateFromPassword</code>, <code>json.Marshal</code>, <code>strconv.ParseUint</code>, type assertions de credenciales de canal. Los fallos silenciosos producen comportamiento impredecible sin trazabilidad.",
+code:`<span class="cmt">// handlers/users.go:180</span>
+hash, <span class="bad">_</span> := bcrypt.GenerateFromPassword(...)   <span class="cmt">// error CPU ignorado</span>
+
+<span class="cmt">// handlers/pub_content.go:307</span>
+phoneID, <span class="bad">_</span> := ch.Credentials[<span class="str">"phone_number_id"</span>].(<span class="ty">string</span>)
+token, <span class="bad">_</span>   := ch.Credentials[<span class="str">"access_token"</span>].(<span class="ty">string</span>)
+<span class="cmt">// si la type assertion falla: phoneID="" → llamada con credencial vacía</span>`,
+fix:"Verificar y loguear todos los errores. Para type assertions usar la forma de dos valores: <code>val, ok := m[key].(string); if !ok { return fmt.Errorf(...) }</code>"},
+
+{id:"HIGH-03",s:"h",cat:"Backend API",title:"Context propagation ausente — queries sin WithContext",
+file:"handlers/conversations.go:86",
+desc:"Ninguna query GORM usa <code>.WithContext(c.Request.Context())</code>. Si el cliente cierra la conexión (navega fuera, timeout de red), la query de BD sigue ejecutándose. En reportes con queries pesadas esto bloquea conexiones del pool innecesariamente, acelerando el agotamiento bajo carga.",
+code:`<span class="cmt">// conversations.go:86 — sin WithContext</span>
+base.Preload(<span class="str">"Contact"</span>).Preload(<span class="str">"Agent"</span>).Preload(<span class="str">"Channel"</span>).
+    Order(<span class="str">"conversations.unread_count DESC..."</span>).
+    Limit(limit).Offset(offset).<span class="bad">Find(&amp;convs)</span>`,
+fix:"Agregar <code>.WithContext(c.Request.Context())</code> en todas las queries GORM. Especialmente crítico en Reports y Monitor donde las queries son lentas."},
+
+{id:"HIGH-04",s:"h",cat:"Frontend",title:"dangerouslySetInnerHTML sin sanitizar (8+ archivos)",
+file:"web/src/pages/ (múltiples)",
+desc:"Al menos 8 componentes usan <code>dangerouslySetInnerHTML</code> con valores provenientes del API (<code>link.label</code>, <code>guide.warningNote</code>, <code>guide.infoNote</code>). Si el backend almacena HTML sin sanitizar (p.ej. via un admin malicioso o compromiso de BD), se ejecuta XSS en el cliente. Combinado con el JWT en localStorage (CRIT-06), esto permite robo completo de sesión.",
+code:`<span class="cmt">// PubContentStudioPage.tsx:217</span>
+&lt;span <span class="bad">dangerouslySetInnerHTML</span>={{ __html: link.label }} /&gt;
+
+<span class="cmt">// IntegrationGuidePage.tsx:415, 427, 462, 507</span>
+&lt;div <span class="bad">dangerouslySetInnerHTML</span>={{ __html: guide.warningNote }} /&gt;`,
+fix:"Instalar <code>dompurify</code>. Reemplazar todos los usos: <code>dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(value) }}</code>. Si el valor no requiere HTML, usar <code>{value}</code> directamente (React escapa automáticamente)."},
+
+{id:"HIGH-05",s:"h",cat:"Backend API",title:"Índices ausentes en foreign keys",
+file:"internal/models/conversation.go",
+desc:"<code>ContactID</code>, <code>AgentID</code>, <code>ChannelID</code> y <code>DepartmentID</code> en el modelo <code>Conversation</code> son foreign keys sin índice explícito. Las queries del Inbox (<code>WHERE agent_id = ?</code>) y conversaciones por contacto generan full table scans. Con 100K+ conversaciones, el tiempo de respuesta del Inbox se degradará significativamente.",
+code:`<span class="cmt">// models/conversation.go — sin index en FKs</span>
+<span class="kw">type</span> <span class="ty">Conversation</span> <span class="kw">struct</span> {
+    ContactID    <span class="ty">uint</span>  <span class="bad">// falta: gorm:"index"</span>
+    AgentID      *<span class="ty">uint</span> <span class="bad">// falta: gorm:"index"</span>
+    ChannelID    <span class="ty">uint</span>  <span class="bad">// falta: gorm:"index"</span>
+    DepartmentID *<span class="ty">uint</span> <span class="bad">// falta: gorm:"index"</span>
+}`,
+fix:'Agregar <code>gorm:"index"</code> a cada FK. También agregar índice compuesto en <code>conversation_tags(conversation_id, tag_id)</code> para los joins de etiquetas.'},
+
+{id:"HIGH-06",s:"h",cat:"Backend API",title:"CSV de campañas — DoS por conteo ilimitado de filas",
+file:"handlers/campaigns.go:292",
+desc:"El límite de 5 MB en el CSV previene archivos grandes en bytes, pero no en filas. Un CSV con líneas de 1 byte cada una puede contener 5 millones de filas. El handler inserta un <code>CampaignRecipient</code> por cada fila sin límite de registros, potencialmente saturando la base de datos.",
+code:`<span class="cmt">// campaigns.go:292 — solo valida bytes, no filas</span>
+<span class="kw">if</span> file.Size > maxCSVBytes { <span class="kw">return</span> error }
+<span class="kw">for</span> i, line := <span class="kw">range</span> strings.Split(string(buf), <span class="str">"\n"</span>) {
+    <span class="bad">phones = append(phones, phone)</span>  <span class="cmt">// sin límite de iteraciones</span>
+}`,
+fix:"Agregar: <code>const maxCSVRows = 50000</code> y verificar <code>if len(phones) &gt; maxCSVRows { return err }</code> dentro del loop."},
+
+{id:"HIGH-07",s:"h",cat:"Frontend",title:"Stack trace expuesto en producción (error boundary)",
+file:"web/src/App.tsx:9",
+desc:"El <code>MonitorErrorBoundary</code> renderiza el stack trace completo (<code>error.stack</code>) directamente en el DOM en producción. Los stack traces exponen nombres de funciones internas, rutas de archivos y versiones de librerías, facilitando reconnaissance para exploits dirigidos.",
+code:`<span class="cmt">// App.tsx:9 — stack visible en producción</span>
+&lt;pre style={{...}}&gt;<span class="bad">{this.state.error.stack}</span>&lt;/pre&gt;`,
+fix:"Envolver en <code>import.meta.env.DEV &amp;&amp; ...</code>. En producción mostrar solo: <code>\"Ha ocurrido un error. Contacta a soporte.\"</code> y enviar el stack silenciosamente a un servicio de monitoreo (Sentry, etc.)."},
+
+{id:"HIGH-08",s:"h",cat:"Frontend",title:"WebSocket messages sin validación de schema",
+file:"web/src/hooks/useWebSocket.ts:15",
+desc:"Los mensajes WebSocket se parsean y distribuyen a handlers sin validar su estructura. En <code>InboxPage.tsx:1383</code> el cast <code>raw as Message</code> no es validación — es solo un hint de TypeScript. Un servidor comprometido o ataque MITM puede enviar payloads malformados que causen comportamiento impredecible o XSS en el cuerpo del mensaje.",
+code:`<span class="cmt">// useWebSocket.ts:21</span>
+<span class="kw">const</span> msg: WSMessage = JSON.parse(e.data)  <span class="cmt">// sin validación</span>
+handlers.get(key)?.<span class="fn">forEach</span>(h => <span class="fn">h</span>(msg.data))
+
+<span class="cmt">// InboxPage.tsx:1383</span>
+<span class="kw">const</span> data = raw <span class="kw">as</span> <span class="ty">Message</span>  <span class="bad">// type cast ≠ runtime validation</span>`,
+fix:"Usar Zod: <code>const result = WSMessageSchema.safeParse(JSON.parse(e.data)); if (!result.success) return;</code>"},
+
+{id:"HIGH-09",s:"h",cat:"Infraestructura",title:"Graceful shutdown ausente en main.go",
+file:"api/cmd/server/main.go:12",
+desc:"<code>main.go</code> usa <code>r.Run()</code> sin manejo de señales SIGTERM/SIGINT. Un <code>systemctl stop harmony-api</code> o redeploy fuerza SIGKILL inmediato, terminando conexiones WebSocket activas, requests en vuelo y jobs de Asynq a mitad de ejecución. Los mensajes en tránsito pueden perderse.",
+code:`<span class="cmt">// main.go:31 — sin graceful shutdown</span>
+<span class="kw">if</span> err := r.Run(addr); err != <span class="kw">nil</span> {
+    log.Fatalf(<span class="str">"server error: %v"</span>, err)
+}
+<span class="cmt">// ctrl+C o SIGTERM → kill inmediato, sin drenar requests activos</span>`,
+fix:"Usar <code>http.Server</code> con <code>Shutdown(ctx)</code> + <code>signal.NotifyContext</code> para esperar que los requests en vuelo completen (max 30s) antes de salir."},
+
+{id:"HIGH-10",s:"h",cat:"Base de Datos",title:"Pool de DB por empresa sin límite de tamaño",
+file:"api/internal/database/company.go:16",
+desc:"El <code>sync.Map</code> que cachea conexiones por empresa crece sin límite. Con 1000 empresas activas se almacenan 1000 <code>*gorm.DB</code> simultáneamente, cada una con su propio pool de conexiones (<code>MaxOpenConns=10</code> → 10K conexiones a PostgreSQL máximo teórico). No hay TTL ni mecanismo de eviction.",
+code:`<span class="cmt">// database/company.go:16</span>
+<span class="kw">var</span> pool sync.Map  <span class="cmt">// map[uint]*gorm.DB</span>
+<span class="bad">// sin límite de tamaño, sin TTL, sin eviction</span>
+pool.Store(companyID, db)  <span class="cmt">// cachea indefinidamente</span>`,
+fix:"Limitar tamaño del pool (max 500 entradas). Agregar TTL por entrada. Implementar LRU simple o bien usar una librería de caché con eviction (<code>golang.org/x/sync</code> o <code>github.com/hashicorp/golang-lru</code>)."},
+
+{id:"HIGH-11",s:"h",cat:"Base de Datos",title:"Tenant isolation implícita — sin company_id en queries historial",
+file:"api/internal/handlers/history.go:101",
+desc:"Las queries en <code>history.go</code> no incluyen filtro <code>company_id</code>, dependiendo implícitamente de que el middleware <code>CompanyDB</code> inyecte la BD correcta. Si por error o refactoring futura un handler usa la BD del sistema en lugar de la de empresa, habrá cross-tenant data leak sin ninguna capa de defensa adicional.",
+code:`<span class="cmt">// history.go:101 — sin company_id</span>
+db.Model(&amp;models.Conversation{}).
+    <span class="bad">Where("status = 'closed' AND DATE(created_at) >= ?", body.From)</span>.
+    Pluck(<span class="str">"id"</span>, &amp;convIDs)
+<span class="cmt">// company_id ausente — defensa de una sola capa</span>`,
+fix:"Agregar siempre <code>company_id = ?</code> en el WHERE como defensa en profundidad, independientemente de la BD activa."},
+
+{id:"HIGH-12",s:"h",cat:"Base de Datos",title:"WebSocket channel allowlist no aplicada",
+file:"api/internal/ws/hub.go:226",
+desc:"La función <code>isChannelAllowed</code> retorna <code>true</code> para cualquier canal que no coincida con los prefijos conocidos. Un cliente puede suscribirse a canales arbitrarios como <code>'superadmin_panel'</code> o <code>'internal_audit'</code>, recibiendo broadcasts futuros si esos canales se añaden.",
+code:`<span class="cmt">// hub.go:226 — default permisivo</span>
+<span class="kw">func</span> <span class="fn">isChannelAllowed</span>(channel <span class="ty">string</span>) <span class="ty">bool</span> {
+    <span class="cmt">// ... checks por prefijo conocido ...</span>
+    <span class="bad">return true</span>  <span class="cmt">// canales desconocidos: permitidos por defecto</span>
+}`,
+fix:"Cambiar a allowlist explícita: <code>return false</code> al final. Solo permitir prefijos conocidos: <code>user.</code>, <code>conversation.</code>, <code>department.</code>, <code>company.</code>, <code>inbox</code>."},
+
+{id:"HIGH-13",s:"h",cat:"Infraestructura",title:"Log injection — datos de usuario en logs sin sanitizar",
+file:"api/internal/database/company.go:32",
+desc:"Errores que pueden contener datos del usuario (incluyendo valores de SQL) se loguean con <code>log.Printf(\"%v\", err)</code>. Un atacante puede inyectar secuencias ANSI (<code>\\x1b[</code>) en campos de texto para corromper logs o engañar a sistemas de monitoreo (ELK, Datadog).",
+code:`<span class="cmt">// company.go:32</span>
+log.Printf(<span class="str">"WARN: migraciones fallidas para DB %s: %v"</span>,
+    dbName, <span class="bad">err</span>)  <span class="cmt">// err puede contener datos del usuario</span>`,
+fix:"Loguear solo el tipo del error, no el mensaje: <code>fmt.Sprintf(\"%T\", err)</code>. Para structured logging considerar <code>log/slog</code> de Go 1.21+ con campos estructurados."},
+
+// ===== MEDIA =====
+{id:"MED-01",s:"m",cat:"Backend API",title:"SVG XSS bypass — validación solo en lowercase",
+file:"handlers/system_settings.go:130",
+desc:"La validación SVG busca patrones peligrosos en <code>strings.ToLower(svgContent)</code>, pero no normaliza entidades HTML ni variantes de mayúsculas antes del check. Bypasses conocidos: <code>&lt;ScRiPt&gt;</code>, <code>on&#108;oad=</code>, <code>&lt;use xlink:href=\"javascript:...\"&gt;</code>.",
+code:`dangerousPatterns := []<span class="ty">string</span>{<span class="str">"&lt;script"</span>, <span class="str">"javascript:"</span>, <span class="str">"onload="</span>}
+<span class="kw">for</span> _, p := <span class="kw">range</span> dangerousPatterns {
+    <span class="bad">strings.Contains(svgLower, p)</span>  <span class="cmt">// bypass: &lt;ScRiPt&gt;, on&#108;oad=</span>
+}`,
+fix:"Usar una librería de sanitización SVG dedicada. Como mínimo, normalizar entidades HTML antes de comparar y agregar patrones extendidos: <code>on\\w+=</code>, <code>xlink:href</code>, <code>&lt;use</code>, <code>href=</code>."},
+
+{id:"MED-02",s:"m",cat:"Backend API",title:"sync.Mutex en rate limiter — contención innecesaria",
+file:"middleware/ratelimit.go:16",
+desc:"El rate limiter usa <code>sync.Mutex</code> que serializa tanto lecturas como escrituras. La operación de limpieza del mapa (<code>delete</code>) bloquea todos los requests concurrentes. Bajo carga alta (1000+ RPS) esto crea contención significativa.",
+code:`<span class="kw">type</span> <span class="ty">rateLimiter</span> <span class="kw">struct</span> {
+    mu      sync.<span class="ty">Mutex</span>  <span class="bad">// bloquea lecturas Y escrituras</span>
+    buckets <span class="kw">map</span>[<span class="ty">string</span>]*<span class="ty">rateBucket</span>
+}
+func (rl *rateLimiter) allow(key string) bool {
+    <span class="bad">rl.mu.Lock()</span>  <span class="cmt">// serializa todo — incluyendo reads concurrentes</span>
+    defer rl.mu.Unlock()`,
+fix:"Cambiar a <code>sync.RWMutex</code>. Usar <code>RLock/RUnlock</code> para lecturas y <code>Lock/Unlock</code> solo al escribir/limpiar."},
+
+{id:"MED-03",s:"m",cat:"Backend API",title:"Goroutine leak en WebSocket unregister",
+file:"ws/hub.go:106",
+desc:"Cuando el canal <code>send</code> de un cliente está lleno, se lanza una goroutine anónima que envía al canal <code>unregister</code>. Si ese canal también está bloqueado (sin buffer), la goroutine queda colgada indefinidamente.",
+code:`<span class="kw">case</span> c.send <- data:
+<span class="kw">default</span>:
+    <span class="bad">go func</span>(cl *client) { h.unregister <- cl }(c)
+    <span class="cmt">// si h.unregister está lleno → goroutine bloqueada para siempre</span>`,
+fix:"Usar select con default: <code>select { case h.unregister &lt;- cl: default: cl.conn.Close() }</code>"},
+
+{id:"MED-04",s:"m",cat:"Backend API",title:"Path traversal potencial en favicon_path",
+file:"handlers/system_settings.go:62",
+desc:"El campo <code>favicon_path</code> almacenado en BD se concatena directamente al servir la respuesta de configuración del sistema. Un admin malicioso o un atacante con acceso a la tabla podría insertar <code>../../etc/passwd</code>.",
+code:`faviconURL := <span class="str">"/"</span> + <span class="bad">faviconPath</span>  <span class="cmt">// sin validar el path</span>
+<span class="cmt">// si faviconPath = "../../secret" → URL = "/../../secret"</span>`,
+fix:"Validar que <code>faviconPath</code> no contenga <code>../</code>, <code>./</code> ni secuencias de traversal. Preferiblemente almacenar solo el nombre de archivo y construir la URL con un prefijo fijo."},
+
+{id:"MED-05",s:"m",cat:"Backend API",title:"Circuit breaker ausente para APIs externas",
+file:"handlers/inbound.go + pub_content.go",
+desc:"Si Anthropic API está caída, cada mensaje entrante espera 30 segundos hasta timeout. Con 100 mensajes/minuto se acumulan 3000 segundos de espera total, saturando goroutines y el pool de conexiones. No hay fail-fast.",
+code:`<span class="cmt">// Sin circuit breaker — todos los requests esperan el timeout</span>
+resp, err := client.Do(req)  <span class="cmt">// espera 30s si Anthropic está caído</span>
+<span class="cmt">// 100 msg/min × 30s timeout = 3000 goroutines esperando</span>`,
+fix:"Implementar patrón circuit breaker simple: contador de fallos consecutivos. Si supera umbral (5 fallos), rechazar requests rápido por 60s antes de reintentar. Librería: <code>github.com/sony/gobreaker</code>."},
+
+{id:"MED-06",s:"m",cat:"Base de Datos",title:"Rate limiting solo por IP — fácil de eludir",
+file:"middleware/ratelimit.go:73",
+desc:"El rate limiter usa la IP del cliente como única clave. En redes corporativas con proxy o NAT, todos los usuarios comparten 1 IP y pueden ser bloqueados colectivamente. Un atacante desde una botnet distribuida elude completamente el límite.",
+code:`<span class="cmt">// ratelimit.go:89</span>
+key := c.ClientIP()  <span class="bad">// solo IP — no incluye user_id</span>
+<span class="kw">if</span> !rl.<span class="fn">allow</span>(key) { ... }`,
+fix:"Para endpoints autenticados usar <code>user_id</code> como clave de rate limit. Para endpoints públicos (login, forgot-password) combinar IP + User-Agent hash como clave compuesta."},
+
+{id:"MED-07",s:"m",cat:"Backend API",title:"Mensajes de error del servidor expuestos al frontend",
+file:"handlers/auth.go (múltiples)",
+desc:"Los mensajes de error del backend se reenvían tal cual al cliente frontend. Errores como <code>'Email already registered in company_id=42'</code> o mensajes de constraint de PostgreSQL revelan estructura interna de la BD y permiten enumeración de usuarios.",
+code:`<span class="cmt">// LoginPage.tsx:52 — mensaje de BD al usuario final</span>
+<span class="kw">const</span> msg = axiosErr?.response?.data?.message
+setError(msg ?? <span class="str">"Error de red"</span>)  <span class="bad">// puede ser "duplicate key in users"</span>`,
+fix:"El backend debe devolver solo mensajes genéricos en producción. El frontend debe filtrar mensajes que contengan palabras clave técnicas: <code>database</code>, <code>duplicate</code>, <code>constraint</code>, etc."},
+
+{id:"MED-08",s:"m",cat:"Frontend",title:"Password reset: email no implementado (feature rota)",
+file:"handlers/auth.go:269",
+desc:"El handler de forgot-password genera el token y la URL pero tiene <code>_ = resetURL // TODO: enviar email</code>. El usuario no recibe el enlace de reset. La feature está completamente rota en producción.",
+code:`<span class="cmt">// auth.go:269</span>
+resetURL := fmt.Sprintf(<span class="str">"%s/reset-password?token=..."</span>, frontendURL)
+<span class="bad">_ = resetURL</span>  <span class="cmt">// TODO: enviar por email — nunca implementado</span>`,
+fix:"Implementar envío de email via SMTP (config.App.SMTPHost) o servicio transaccional (SendGrid, AWS SES). Hasta tanto, deshabilitar el endpoint y mostrar mensaje claro al usuario."},
+
+{id:"MED-09",s:"m",cat:"Base de Datos",title:"SQL injection latente en CREATE DATABASE",
+file:"database/provision.go:41",
+desc:"El nombre de BD se construye con <code>fmt.Sprintf(\"harmony_c%d\", companyID)</code> — actualmente seguro porque <code>companyID</code> es <code>uint</code>. Sin embargo, la query SQL se ejecuta con concatenación directa. Un futuro refactoring que cambie el tipo de ID podría introducir inyección.",
+code:`<span class="cmt">// provision.go:41 — string en SQL sin prepared statement</span>
+rootDB.Exec(fmt.Sprintf(<span class="str">`CREATE DATABASE "%s"`</span>, <span class="bad">dbName</span>))
+<span class="cmt">// PostgreSQL no soporta params en DDL, pero el nombre debe validarse</span>`,
+fix:"Agregar validación explícita antes del Exec: <code>if !regexp.MustCompile(`^harmony_c\\d{1,7}$`).MatchString(dbName) { return err }</code>"},
+
+{id:"MED-10",s:"m",cat:"Base de Datos",title:"Credenciales en contexto del GORM logger",
+file:"database/system.go:21",
+desc:"El logger de GORM en modo Warn puede incluir el DSN completo (con usuario y contraseña) en logs de error. Si la conexión falla, las credenciales pueden aparecer en los logs del servidor.",
+code:`db, err := gorm.Open(postgres.Open(<span class="bad">dsn</span>), &amp;gorm.Config{
+    Logger: logger.Default.LogMode(logger.Warn),
+})
+<span class="cmt">// dsn = "user=admin password=secret host=..." — puede quedar en logs</span>`,
+fix:"Usar un logger custom que enmascare el DSN con regex antes de escribir. O parsear el DSN y construir la URL enmascarando la contraseña para logs."},
+
+{id:"MED-11",s:"m",cat:"Base de Datos",title:"connMaxLifetime demasiado larga (1 hora)",
+file:"database/company.go:60",
+desc:"Las conexiones a BD se reciclan cada hora. En caso de incidente de seguridad (robo de credenciales, cambio de password de BD), la aplicación mantiene conexiones activas hasta 60 minutos después de revocar el acceso.",
+code:`sqlDB.SetConnMaxLifetime(<span class="bad">1 * time.Hour</span>)
+<span class="cmt">// en caso de compromiso: conexiones activas por 60 min más</span>`,
+fix:"Reducir a <code>10 * time.Minute</code>. Esto también mejora la distribución de carga entre réplicas cuando se añaden nodos de BD."},
+
+{id:"MED-12",s:"m",cat:"Frontend",title:"CSRF: protección no confirmada en endpoints mutantes",
+file:"web/src/api/client.ts",
+desc:"No hay token CSRF visible en los headers de las requests. Si en una versión futura se migra a cookies httpOnly (recomendado para CRIT-06), las requests estarían expuestas a CSRF a menos que se implemente protección explícita.",
+code:`<span class="cmt">// client.ts — sin header CSRF</span>
+api.defaults.headers.common[<span class="str">'Authorization'</span>] = <span class="str">`Bearer ${token}`</span>
+<span class="cmt">// falta: api.defaults.headers.common['X-CSRF-Token'] = csrfToken</span>`,
+fix:"Agregar header <code>X-Requested-With: XMLHttpRequest</code> (mitigación básica). Al migrar a cookies, implementar token CSRF double-submit o SameSite=Strict."},
+
+// ===== BAJA =====
+{id:"LOW-01",s:"lo",cat:"Base de Datos",title:"Webhook secrets sin encriptación en reposo",
+file:"internal/models/channel.go:91",
+desc:"Los secrets de webhook de Meta/Telegram se almacenan en texto plano en la columna <code>credentials</code>. Un dump de BD expone todos los secrets, permitiendo falsificar webhooks para todos los canales.",
+code:`<span class="kw">type</span> <span class="ty">Channel</span> <span class="kw">struct</span> {
+    Credentials <span class="ty">datatypes.JSONMap</span> <span class="cmt">// webhook_secret en claro</span>
+    WebhookSecret <span class="ty">string</span> <span class="str">json:"-"</span>  <span class="cmt">// no cifrado en BD</span>
+}`,
+fix:"Cifrar campos sensibles con AES-256-GCM usando una clave derivada de <code>APP_KEY</code>. GORM soporta hooks <code>AfterFind</code>/<code>BeforeSave</code> para cifrar/descifrar transparentemente."},
+
+{id:"LOW-02",s:"lo",cat:"Infraestructura",title:"Content Security Policy (CSP) ausente",
+file:"middleware/security_headers.go",
+desc:"No se envía header <code>Content-Security-Policy</code>. Sin CSP, un XSS puede cargar scripts externos y filtrar datos a dominios del atacante. La cabecera CSP es la principal defensa en profundidad contra XSS.",
+code:`<span class="cmt">// security_headers.go — CSP no configurada</span>
+c.Header(<span class="str">"X-Frame-Options"</span>, <span class="str">"DENY"</span>)
+c.Header(<span class="str">"X-Content-Type-Options"</span>, <span class="str">"nosniff"</span>)
+<span class="bad">// falta: Content-Security-Policy</span>`,
+fix:'Agregar: <code>c.Header("Content-Security-Policy", "default-src \'self\'; script-src \'self\'; connect-src \'self\' wss:; img-src \'self\' data: https:; frame-ancestors \'none\'")</code>'},
+
+{id:"LOW-03",s:"lo",cat:"Frontend",title:"Búsqueda de historial sin validación de input",
+file:"web/src/pages/inbox/ChatHistoryPage.tsx:259",
+desc:"Los campos de búsqueda (nombre, teléfono) se envían al API sin validación de formato. Aunque el backend debería validar, la ausencia de validación cliente permite búsquedas con caracteres especiales que podrían causar ReDoS si el backend usa regex inseguros.",
+code:`<span class="kw">const</span> n = name.trim()
+<span class="kw">const</span> p = phone.trim()
+setSearchQuery({ name: n, phone: p })  <span class="bad">// sin validar formato</span>
+<span class="cmt">// phone podría ser: "'; DROP TABLE--" → enviado al API</span>`,
+fix:"Agregar validación básica: <code>/^[\\w\\s\\-]{1,100}$/</code> para nombre y <code>/^\\+?[0-9]{7,15}$/</code> para teléfono."},
+
+{id:"LOW-04",s:"lo",cat:"Backend API",title:"Acoplamiento directo entre inbound.go y bot.go",
+file:"handlers/inbound.go",
+desc:"<code>inbound.go</code> accede directamente al struct <code>BotConfig</code> definido en <code>bot.go</code>, creando acoplamiento entre módulos. Cambios en <code>BotConfig</code> rompen silenciosamente el flujo de mensajes entrantes. Dificulta tests unitarios de inbound sin instanciar toda la lógica del bot.",
+code:`<span class="cmt">// inbound.go — usa BotConfig de bot.go directamente</span>
+<span class="kw">var</span> botCfg <span class="ty">BotConfig</span>  <span class="cmt">// definido en handlers/bot.go</span>
+<span class="kw">if</span> err := db.First(&amp;botCfg).Error; err != <span class="kw">nil</span> { ... }`,
+fix:"Extraer <code>BotConfig</code> a <code>models/bot.go</code>. Crear <code>services/bot_service.go</code> con interfaz que ambos handlers consuman. Mejora testabilidad y reduce acoplamiento."}
+];
+
+const SEV_LABELS={c:"CRÍTICA",h:"ALTA",m:"MEDIA",lo:"BAJA"};
+const SEV_CLASSES={c:"c",h:"h",m:"m",lo:"lo"};
+
+function buildSidebar(){
+  const list=document.getElementById('sb-list');
+  const groups={c:[],h:[],m:[],lo:[]};
+  F.forEach(f=>groups[f.s].push(f));
+  ['c','h','m','lo'].forEach(sev=>{
+    if(!groups[sev].length)return;
+    const title=document.createElement('div');
+    title.className='sb-sec-title';
+    title.textContent=SEV_LABELS[sev];
+    list.appendChild(title);
+    groups[sev].forEach(f=>{
+      const a=document.createElement('a');
+      a.className='sitem';
+      a.href='#'+f.id;
+      a.dataset.sev=f.s;
+      a.innerHTML=`<span class="dot ${f.s}"></span><span class="sid">${f.id}</span><span class="stitle">${f.title}</span>`;
+      list.appendChild(a);
+    });
+  });
+}
+
+function buildContent(){
+  const cont=document.getElementById('content');
+  const groups={c:[],h:[],m:[],lo:[]};
+  F.forEach(f=>groups[f.s].push(f));
+  const names={c:"CRÍTICA — Corrección inmediata requerida",
+    h:"ALTA — Corregir antes de producción",
+    m:"MEDIA — Próximo sprint",
+    lo:"BAJA — Backlog técnico"};
+  ['c','h','m','lo'].forEach(sev=>{
+    if(!groups[sev].length)return;
+    const sec=document.createElement('div');
+    sec.className='sevsec';
+    sec.dataset.sev=sev;
+    const cnt=groups[sev].length;
+    sec.innerHTML=`<div class="sech">
+      <span class="sebadge ${sev}">${SEV_LABELS[sev]}</span>
+      <span class="sename">${names[sev]}</span>
+      <span class="secnt">${cnt} hallazgo${cnt>1?'s':''}</span>
+    </div>`;
+    groups[sev].forEach(f=>{
+      const card=document.createElement('div');
+      card.className=`fc ${sev}`;
+      card.id=f.id;
+      card.innerHTML=`<div class="fhd" onclick="toggle(this.parentElement)">
+        <span class="fid">${f.id}</span>
+        <span class="fname">${f.title}</span>
+        <span class="fcat">${f.cat}</span>
+        <span class="ffile">${f.file}</span>
+        <span class="chev">▶</span>
+      </div>
+      <div class="fbody">
+        <p class="fdesc">${f.desc}</p>
+        <div class="clabel">Código problemático</div>
+        <div class="cblock">${f.code}</div>
+        <div class="fixbox">
+          <div class="flabel">Corrección recomendada</div>
+          ${f.fix}
+        </div>
+      </div>`;
+      sec.appendChild(card);
+    });
+    cont.appendChild(sec);
+  });
+}
+
+function toggle(card){
+  card.classList.toggle('open');
+}
+
+let active='all';
+function filter(sev){
+  active=sev;
+  document.querySelectorAll('.fbtn').forEach(b=>{
+    b.classList.remove('act');
+    if(b.onclick.toString().includes(`'${sev}'`))b.classList.add('act');
+  });
+  document.querySelectorAll('.sevsec').forEach(sec=>{
+    sec.classList.toggle('hidden',sev!=='all'&&sec.dataset.sev!==sev);
+  });
+  document.querySelectorAll('.sitem').forEach(item=>{
+    item.style.display=(sev==='all'||item.dataset.sev===sev)?'':'none';
+  });
+}
+
+buildSidebar();
+buildContent();
+
+// smooth scroll sidebar items
+document.querySelectorAll('.sitem').forEach(a=>{
+  a.addEventListener('click',e=>{
+    e.preventDefault();
+    const id=a.getAttribute('href').slice(1);
+    const el=document.getElementById(id);
+    if(el){
+      el.classList.add('open');
+      el.scrollIntoView({behavior:'smooth',block:'start'});
+    }
+  });
+});
+</script>

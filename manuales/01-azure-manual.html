@@ -1,0 +1,667 @@
+<!doctype html>
+<title>Harmony v3 — Despliegue en Azure (Manual)</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2333;
+  --border:#30363d;--border2:#21262d;
+  --accent:#0078d4;--accent-dim:#1a3a5c;--accent-glow:#0078d426;
+  --text:#e6edf3;--text2:#8b949e;--text3:#484f58;
+  --green:#3fb950;--yellow:#d29922;--red:#f85149;--orange:#e3b341;
+  --code-bg:#0d1117;--code-border:#21262d;
+  font-size:15px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;line-height:1.6;min-height:100vh}
+
+/* Layout */
+.wrapper{display:grid;grid-template-columns:240px 1fr;min-height:100vh;max-width:1200px;margin:0 auto;gap:0}
+.sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;padding:24px 16px;border-right:1px solid var(--border2);background:var(--surface)}
+.content{padding:48px 56px;max-width:820px}
+@media(max-width:900px){.wrapper{grid-template-columns:1fr}.sidebar{display:none}.content{padding:32px 24px}}
+
+/* Sidebar */
+.sidebar-logo{display:flex;align-items:center;gap:10px;margin-bottom:28px;padding-bottom:16px;border-bottom:1px solid var(--border2)}
+.sidebar-logo .badge{background:var(--accent);color:#fff;font-size:10px;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:4px;text-transform:uppercase}
+.sidebar-logo .plat{font-size:12px;color:var(--text2);font-weight:500}
+nav ul{list-style:none}
+nav li a{display:block;padding:5px 10px;font-size:12.5px;color:var(--text2);text-decoration:none;border-radius:5px;border-left:2px solid transparent;transition:all .15s}
+nav li a:hover{color:var(--text);background:var(--surface2);border-left-color:var(--accent)}
+nav .section-label{font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);padding:16px 10px 4px}
+
+/* Header */
+.doc-header{margin-bottom:40px;padding-bottom:28px;border-bottom:1px solid var(--border2)}
+.doc-eyebrow{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+.doc-eyebrow::before{content:'';display:block;width:18px;height:2px;background:var(--accent)}
+h1{font-size:28px;font-weight:700;line-height:1.25;text-wrap:balance;color:var(--text);margin-bottom:10px}
+.doc-meta{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
+.meta-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--text2);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:3px 10px}
+.meta-chip svg{width:13px;height:13px;flex-shrink:0}
+
+/* Steps */
+.step{margin-bottom:40px}
+.step-header{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
+.step-num{flex-shrink:0;width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:2px}
+.step-title{font-size:17px;font-weight:600;color:var(--text);text-wrap:balance}
+.step-body{padding-left:44px}
+.step-body p{color:var(--text2);font-size:14px;margin-bottom:12px;line-height:1.7}
+
+/* Headings */
+h2{font-size:20px;font-weight:700;color:var(--text);margin:44px 0 20px;padding-top:12px;border-top:1px solid var(--border2)}
+h3{font-size:15px;font-weight:600;color:var(--text);margin:20px 0 10px}
+
+/* Code */
+pre{background:var(--code-bg);border:1px solid var(--code-border);border-radius:8px;padding:16px 20px;overflow-x:auto;margin:12px 0;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12.5px;line-height:1.65}
+code{font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12.5px}
+pre code{color:#e6edf3;background:none;padding:0}
+.cmd{color:#79c0ff}
+.cmt{color:#8b949e}
+.str{color:#a5d6ff}
+.key{color:#ff7b72}
+.val{color:#ffa657}
+:not(pre) > code{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:12px;color:#a5d6ff}
+
+/* Boxes */
+.box{border-radius:8px;padding:14px 18px;font-size:13.5px;margin:14px 0;display:grid;grid-template-columns:18px 1fr;gap:0 10px;align-items:start}
+.box-icon{font-size:15px;line-height:1.6;color:inherit}
+.box-text{color:var(--text2);line-height:1.6}
+.box-text strong{display:block;margin-bottom:3px;font-size:13px;font-weight:700}
+.box.warn{background:#211a00;border:1px solid #573a00}
+.box.warn .box-icon{color:var(--yellow)}
+.box.tip{background:#0a1f1a;border:1px solid #0d3a2e}
+.box.tip .box-icon{color:var(--green)}
+.box.info{background:#0a1930;border:1px solid #0d3060}
+.box.info .box-icon{color:#58a6ff}
+.box.danger{background:#1a0a0a;border:1px solid #5a1a1a}
+.box.danger .box-icon{color:var(--red)}
+
+/* Table */
+table{width:100%;border-collapse:collapse;font-size:13px;margin:16px 0}
+th{text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)}
+td{padding:9px 12px;border-bottom:1px solid var(--border2);color:var(--text2);vertical-align:top}
+td:first-child{color:var(--text);font-weight:500}
+
+/* Tags */
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;margin-right:4px}
+.tag-blue{background:var(--accent-dim);color:#58a6ff}
+.tag-green{background:#0a2a14;color:#3fb950}
+.tag-orange{background:#2a1a00;color:#e3b341}
+
+/* File path */
+.filepath{display:inline-flex;align-items:center;gap:5px;font-family:monospace;font-size:12px;color:#79c0ff;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:3px 10px;margin:6px 0}
+
+p{font-size:14px;line-height:1.7;color:var(--text2);margin-bottom:12px}
+</style>
+<body>
+<div class="wrapper">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div>
+      <div class="badge">Azure</div>
+      <div class="plat">Implementación Manual</div>
+    </div>
+  </div>
+  <nav>
+    <div class="section-label">Preparación</div>
+    <ul>
+      <li><a href="#prereqs">Prerrequisitos</a></li>
+      <li><a href="#vm">Crear la VM</a></li>
+      <li><a href="#nsg">Puertos y firewall</a></li>
+      <li><a href="#ssh">Conectar por SSH</a></li>
+    </ul>
+    <div class="section-label">Dependencias</div>
+    <ul>
+      <li><a href="#sistema">Actualizar sistema</a></li>
+      <li><a href="#go">Instalar Go 1.22</a></li>
+      <li><a href="#node">Instalar Node.js 20</a></li>
+      <li><a href="#postgres">Instalar PostgreSQL 16</a></li>
+      <li><a href="#redis">Instalar Redis</a></li>
+      <li><a href="#nginx">Instalar Nginx</a></li>
+    </ul>
+    <div class="section-label">Configuración</div>
+    <ul>
+      <li><a href="#postgres-config">Configurar PostgreSQL</a></li>
+      <li><a href="#usuario">Usuario del sistema</a></li>
+      <li><a href="#codigo">Subir el código</a></li>
+      <li><a href="#env">Variables de entorno</a></li>
+    </ul>
+    <div class="section-label">Despliegue</div>
+    <ul>
+      <li><a href="#build-api">Compilar API</a></li>
+      <li><a href="#build-web">Compilar Frontend</a></li>
+      <li><a href="#systemd">Servicio systemd</a></li>
+      <li><a href="#nginx-config">Configurar Nginx</a></li>
+      <li><a href="#ssl">Certificado SSL</a></li>
+      <li><a href="#verificar">Verificar</a></li>
+    </ul>
+  </nav>
+</aside>
+
+<main class="content">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Harmony v3 · Guía de Despliegue</div>
+    <h1>Implementación en Microsoft Azure<br>— Paso a Paso</h1>
+    <p>Go 1.22 + React 19 + PostgreSQL 16 + Redis + Nginx en una VM Ubuntu 22.04 LTS.</p>
+    <div class="doc-meta">
+      <span class="meta-chip"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm0 1.5a6.5 6.5 0 110 13 6.5 6.5 0 010-13zM7 4.5v5l4.5 2.5.75-1.5L8.5 9V4.5z"/></svg>~60 min</span>
+      <span class="meta-chip">Ubuntu 22.04 LTS</span>
+      <span class="meta-chip">Standard_B2ms (2 vCPU / 8 GB)</span>
+    </div>
+  </div>
+
+  <!-- PRERREQUISITOS -->
+  <h2 id="prereqs">Prerrequisitos</h2>
+  <p>Antes de comenzar necesitas tener listo lo siguiente:</p>
+  <table>
+    <thead><tr><th>Requisito</th><th>Detalle</th></tr></thead>
+    <tbody>
+      <tr><td>Cuenta Azure activa</td><td>Con acceso al portal <code>portal.azure.com</code></td></tr>
+      <tr><td>Dominio o subdominio</td><td>Por ejemplo <code>harmony.tuempresa.com</code> — necesario para SSL</td></tr>
+      <tr><td>Código de Harmony v3</td><td>En un repositorio Git (GitHub/GitLab/Azure DevOps) o archivo ZIP</td></tr>
+      <tr><td>Claves de API</td><td>Anthropic API Key, OpenAI API Key (para el módulo de publicidad)</td></tr>
+      <tr><td>Cliente SSH</td><td>Terminal en macOS/Linux, PuTTY o Windows Terminal en Windows</td></tr>
+    </tbody>
+  </table>
+
+  <!-- VM -->
+  <h2 id="vm">Paso 1 — Crear la Máquina Virtual</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">1</div><div class="step-title">Ir al portal de Azure y crear un recurso</div></div>
+    <div class="step-body">
+      <p>Entra a <strong>portal.azure.com</strong> → clic en <strong>+ Crear un recurso</strong> → busca <strong>Máquina virtual</strong> → clic en <strong>Crear</strong>.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-header"><div class="step-num">2</div><div class="step-title">Configurar los parámetros básicos</div></div>
+    <div class="step-body">
+      <table>
+        <thead><tr><th>Campo</th><th>Valor recomendado</th></tr></thead>
+        <tbody>
+          <tr><td>Grupo de recursos</td><td>Crea uno nuevo: <code>rg-harmony-prod</code></td></tr>
+          <tr><td>Nombre de la VM</td><td><code>vm-harmony-prod</code></td></tr>
+          <tr><td>Región</td><td>East US 2 (o la más cercana a tus usuarios)</td></tr>
+          <tr><td>Imagen</td><td><strong>Ubuntu Server 22.04 LTS - Gen2</strong></td></tr>
+          <tr><td>Tamaño</td><td><strong>Standard_B2ms</strong> (2 vCPU, 8 GB RAM) — mínimo recomendado</td></tr>
+          <tr><td>Autenticación</td><td>Clave pública SSH (más seguro que contraseña)</td></tr>
+          <tr><td>Nombre de usuario</td><td><code>azureuser</code></td></tr>
+          <tr><td>Par de claves SSH</td><td>Genera una nueva o sube tu clave pública existente</td></tr>
+          <tr><td>Disco OS</td><td>SSD Premium, 64 GB mínimo</td></tr>
+        </tbody>
+      </table>
+      <div class="box tip"><span class="box-icon">✓</span><div class="box-text"><strong>Guarda el archivo .pem</strong> Cuando Azure genere el par de claves, descargará un archivo <code>.pem</code>. Guárdalo en un lugar seguro — lo necesitarás para cada conexión SSH.</div></div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-header"><div class="step-num">3</div><div class="step-title">Configurar disco y redes</div></div>
+    <div class="step-body">
+      <p>En la pestaña <strong>Redes</strong>, deja la red virtual predeterminada. En <strong>Dirección IP pública</strong> selecciona <em>Crear nueva</em> de tipo <strong>Estática</strong> — esto garantiza que la IP no cambie al reiniciar la VM.</p>
+      <p>Clic en <strong>Revisar y crear</strong> → <strong>Crear</strong>. La VM tarda 2–3 minutos en desplegarse.</p>
+    </div>
+  </div>
+
+  <!-- NSG -->
+  <h2 id="nsg">Paso 2 — Abrir puertos (NSG)</h2>
+  <p>Por defecto Azure solo abre el puerto 22. Necesitas abrir 80 y 443.</p>
+  <div class="step">
+    <div class="step-header"><div class="step-num">4</div><div class="step-title">Agregar reglas de entrada al Grupo de Seguridad de Red</div></div>
+    <div class="step-body">
+      <p>Ve a tu VM → <strong>Configuración</strong> → <strong>Redes</strong> → clic en el nombre del NSG → <strong>Reglas de seguridad de entrada</strong> → <strong>+ Agregar</strong>.</p>
+      <p>Agrega estas dos reglas:</p>
+      <table>
+        <thead><tr><th>Nombre</th><th>Puerto</th><th>Protocolo</th><th>Prioridad</th></tr></thead>
+        <tbody>
+          <tr><td>Allow-HTTP</td><td>80</td><td>TCP</td><td>300</td></tr>
+          <tr><td>Allow-HTTPS</td><td>443</td><td>TCP</td><td>310</td></tr>
+        </tbody>
+      </table>
+      <div class="box warn"><span class="box-icon">⚠</span><div class="box-text"><strong>No abras el puerto 8080</strong> El API de Go corre en el puerto 8080 internamente. Nginx actúa como proxy. Exponer 8080 directamente es un riesgo de seguridad.</div></div>
+    </div>
+  </div>
+
+  <!-- SSH -->
+  <h2 id="ssh">Paso 3 — Conectar por SSH</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">5</div><div class="step-title">Obtener la IP pública y conectar</div></div>
+    <div class="step-body">
+      <p>En el panel de tu VM verás la <strong>Dirección IP pública</strong>. Cópiala. Luego en tu terminal local:</p>
+      <pre><code><span class="cmt"># Ajusta los permisos del archivo .pem (obligatorio en macOS/Linux)</span>
+<span class="cmd">chmod</span> 400 ~/Descargas/vm-harmony-prod.pem
+
+<span class="cmt"># Conectar (reemplaza 20.x.x.x con tu IP pública)</span>
+<span class="cmd">ssh</span> -i ~/Descargas/vm-harmony-prod.pem azureuser@20.x.x.x</code></pre>
+      <div class="box tip"><span class="box-icon">✓</span><div class="box-text">La primera vez que te conectas, el sistema te pregunta si confías en el host. Escribe <code>yes</code> y presiona Enter.</div></div>
+    </div>
+  </div>
+
+  <!-- SISTEMA -->
+  <h2 id="sistema">Paso 4 — Actualizar el sistema</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">6</div><div class="step-title">Actualizar paquetes de Ubuntu</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">sudo</span> apt update && sudo apt upgrade -y
+<span class="cmd">sudo</span> apt install -y git curl wget unzip build-essential</code></pre>
+    </div>
+  </div>
+
+  <!-- GO -->
+  <h2 id="go">Paso 5 — Instalar Go 1.22</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">7</div><div class="step-title">Descargar e instalar Go 1.22</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Descargar Go 1.22.5</span>
+<span class="cmd">wget</span> https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
+
+<span class="cmt"># Extraer en /usr/local</span>
+<span class="cmd">sudo</span> rm -rf /usr/local/go
+<span class="cmd">sudo</span> tar -C /usr/local -xzf go1.22.5.linux-amd64.tar.gz
+<span class="cmd">rm</span> go1.22.5.linux-amd64.tar.gz
+
+<span class="cmt"># Agregar Go al PATH</span>
+<span class="cmd">echo</span> 'export PATH=$PATH:/usr/local/go/bin' >> ~/.profile
+<span class="cmd">source</span> ~/.profile
+
+<span class="cmt"># Verificar la instalación</span>
+<span class="cmd">go</span> version
+<span class="cmt"># Debe mostrar: go version go1.22.5 linux/amd64</span></code></pre>
+    </div>
+  </div>
+
+  <!-- NODE -->
+  <h2 id="node">Paso 6 — Instalar Node.js 20</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">8</div><div class="step-title">Instalar Node.js 20 LTS vía NodeSource</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Agregar repositorio oficial de Node.js 20</span>
+<span class="cmd">curl</span> -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+
+<span class="cmt"># Instalar Node.js y npm</span>
+<span class="cmd">sudo</span> apt install -y nodejs
+
+<span class="cmt"># Verificar</span>
+<span class="cmd">node</span> -v   <span class="cmt"># v20.x.x</span>
+<span class="cmd">npm</span> -v    <span class="cmt"># 10.x.x</span></code></pre>
+    </div>
+  </div>
+
+  <!-- POSTGRES -->
+  <h2 id="postgres">Paso 7 — Instalar PostgreSQL 16</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">9</div><div class="step-title">Instalar PostgreSQL 16 desde el repositorio oficial</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Agregar repositorio de PostgreSQL</span>
+<span class="cmd">sudo</span> apt install -y postgresql-common
+<span class="cmd">sudo</span> /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+
+<span class="cmt"># Instalar PostgreSQL 16</span>
+<span class="cmd">sudo</span> apt install -y postgresql-16
+
+<span class="cmt"># Iniciar y habilitar al arranque</span>
+<span class="cmd">sudo</span> systemctl enable --now postgresql
+
+<span class="cmt"># Verificar que esté corriendo</span>
+<span class="cmd">sudo</span> systemctl status postgresql</code></pre>
+    </div>
+  </div>
+
+  <!-- REDIS -->
+  <h2 id="redis">Paso 8 — Instalar Redis</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">10</div><div class="step-title">Instalar Redis 7</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">sudo</span> apt install -y redis-server
+
+<span class="cmt"># Configurar Redis para que arranque con el sistema</span>
+<span class="cmd">sudo</span> systemctl enable --now redis-server
+
+<span class="cmt"># Verificar</span>
+<span class="cmd">redis-cli</span> ping
+<span class="cmt"># Debe responder: PONG</span></code></pre>
+    </div>
+  </div>
+
+  <!-- NGINX -->
+  <h2 id="nginx">Paso 9 — Instalar Nginx</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">11</div><div class="step-title">Instalar Nginx y Certbot</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">sudo</span> apt install -y nginx certbot python3-certbot-nginx
+<span class="cmd">sudo</span> systemctl enable nginx</code></pre>
+    </div>
+  </div>
+
+  <!-- POSTGRES CONFIG -->
+  <h2 id="postgres-config">Paso 10 — Configurar PostgreSQL</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">12</div><div class="step-title">Crear usuario y base de datos del sistema</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Entrar como postgres</span>
+<span class="cmd">sudo</span> -u postgres psql
+
+<span class="cmt">-- Dentro de psql: crear usuario (cambia 'MiContraseñaSegura123!' por una tuya)</span>
+<span class="key">CREATE</span> USER harmony <span class="key">WITH</span> PASSWORD <span class="str">'MiContraseñaSegura123!'</span>;
+<span class="key">CREATE</span> DATABASE harmony_system <span class="key">OWNER</span> harmony;
+<span class="key">GRANT</span> <span class="key">ALL</span> <span class="key">PRIVILEGES</span> <span class="key">ON</span> DATABASE harmony_system <span class="key">TO</span> harmony;
+
+<span class="cmt">-- Dar permisos para crear bases de datos (necesario para provisionar empresas)</span>
+<span class="key">ALTER</span> USER harmony CREATEDB;
+
+<span class="cmt">-- Salir de psql</span>
+\q</code></pre>
+      <div class="box warn"><span class="box-icon">⚠</span><div class="box-text"><strong>Contraseña segura</strong> Usa una contraseña de al menos 20 caracteres con letras, números y símbolos. Cópiala — la necesitarás en el archivo .env.</div></div>
+    </div>
+  </div>
+
+  <!-- USUARIO SISTEMA -->
+  <h2 id="usuario">Paso 11 — Crear usuario del sistema</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">13</div><div class="step-title">Crear usuario de sistema para el servicio</div></div>
+    <div class="step-body">
+      <p>Por seguridad, el API de Go no debe correr como root ni como tu usuario SSH.</p>
+      <pre><code><span class="cmt"># Crear usuario sin shell de login</span>
+<span class="cmd">sudo</span> useradd --system --no-create-home --shell /bin/false harmony
+
+<span class="cmt"># Crear directorios del proyecto</span>
+<span class="cmd">sudo</span> mkdir -p /opt/harmony/bin
+<span class="cmd">sudo</span> mkdir -p /var/www/harmony
+<span class="cmd">sudo</span> chown -R harmony:harmony /opt/harmony
+<span class="cmd">sudo</span> chown -R harmony:harmony /var/www/harmony</code></pre>
+    </div>
+  </div>
+
+  <!-- CÓDIGO -->
+  <h2 id="codigo">Paso 12 — Subir el código</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">14</div><div class="step-title">Clonar el repositorio en el servidor</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Si tu repositorio es privado, primero configura un deploy key o HTTPS token</span>
+<span class="cmt"># Opción A: repositorio público o HTTPS con token</span>
+<span class="cmd">sudo</span> -u harmony git clone https://github.com/TU_ORG/harmony-v3.git /opt/harmony/repo
+
+<span class="cmt"># Opción B: subir los archivos vía SCP desde tu máquina local</span>
+<span class="cmt"># (ejecuta esto en tu terminal LOCAL, no en el servidor)</span>
+<span class="cmd">scp</span> -i ~/vm-harmony-prod.pem -r ./Harmony-v3/ azureuser@20.x.x.x:/tmp/harmony-v3
+<span class="cmt"># Luego en el servidor:</span>
+<span class="cmd">sudo</span> mv /tmp/harmony-v3 /opt/harmony/repo
+<span class="cmd">sudo</span> chown -R harmony:harmony /opt/harmony/repo</code></pre>
+    </div>
+  </div>
+
+  <!-- ENV -->
+  <h2 id="env">Paso 13 — Variables de entorno</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">15</div><div class="step-title">Crear el archivo .env de producción</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">sudo</span> nano /opt/harmony/.env</code></pre>
+      <p>Pega el siguiente contenido, reemplazando los valores marcados con <code>&lt;...&gt;</code>:</p>
+      <pre><code><span class="cmt"># ── Aplicación ────────────────────────────────────────</span>
+<span class="key">APP_ENV</span>=<span class="val">production</span>
+<span class="key">PORT</span>=<span class="val">8080</span>
+<span class="key">FRONTEND_URL</span>=<span class="val">https://harmony.tuempresa.com</span>
+
+<span class="cmt"># ── Base de datos ─────────────────────────────────────</span>
+<span class="key">DB_HOST</span>=<span class="val">localhost</span>
+<span class="key">DB_PORT</span>=<span class="val">5432</span>
+<span class="key">DB_USER</span>=<span class="val">harmony</span>
+<span class="key">DB_PASS</span>=<span class="val">MiContraseñaSegura123!</span>
+<span class="key">DB_SSLMODE</span>=<span class="val">disable</span>
+
+<span class="cmt"># ── JWT ───────────────────────────────────────────────</span>
+<span class="cmt"># Genera con: openssl rand -hex 32</span>
+<span class="key">JWT_SECRET</span>=<span class="val">&lt;pega_aqui_64_caracteres_aleatorios&gt;</span>
+<span class="key">JWT_EXPIRY_HOURS</span>=<span class="val">24</span>
+
+<span class="cmt"># ── IA ────────────────────────────────────────────────</span>
+<span class="key">ANTHROPIC_KEY</span>=<span class="val">sk-ant-api03-...</span>
+
+<span class="cmt"># ── Redis / Cola ─────────────────────────────────────</span>
+<span class="key">REDIS_URL</span>=<span class="val">redis://localhost:6379</span>
+
+<span class="cmt"># ── Uploads ──────────────────────────────────────────</span>
+<span class="key">UPLOADS_DIR</span>=<span class="val">/opt/harmony/uploads</span></code></pre>
+      <pre><code><span class="cmt"># Generar el JWT_SECRET con OpenSSL</span>
+<span class="cmd">openssl</span> rand -hex 32
+
+<span class="cmt"># Proteger el archivo .env (solo lectura para el owner)</span>
+<span class="cmd">sudo</span> chmod 600 /opt/harmony/.env
+<span class="cmd">sudo</span> chown harmony:harmony /opt/harmony/.env</code></pre>
+    </div>
+  </div>
+
+  <!-- BUILD API -->
+  <h2 id="build-api">Paso 14 — Compilar el API (Go)</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">16</div><div class="step-title">Compilar el binario de producción</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">cd</span> /opt/harmony/repo/api
+
+<span class="cmt"># Descargar dependencias</span>
+<span class="cmd">go</span> mod download
+
+<span class="cmt"># Compilar (el flag -ldflags reduce el tamaño del binario)</span>
+<span class="cmd">go</span> build -ldflags="-s -w" -o /opt/harmony/bin/harmony-api ./cmd/server/main.go
+
+<span class="cmt"># Verificar que el binario existe</span>
+<span class="cmd">ls</span> -lh /opt/harmony/bin/harmony-api
+<span class="cmt"># Debe mostrar algo como: -rwxr-xr-x 1 azureuser azureuser 18M ...</span>
+
+<span class="cmt"># Dar permisos correctos</span>
+<span class="cmd">sudo</span> chown harmony:harmony /opt/harmony/bin/harmony-api
+<span class="cmd">sudo</span> chmod 755 /opt/harmony/bin/harmony-api</code></pre>
+    </div>
+  </div>
+
+  <!-- BUILD FRONTEND -->
+  <h2 id="build-web">Paso 15 — Compilar el Frontend (React)</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">17</div><div class="step-title">Construir los archivos estáticos de React</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">cd</span> /opt/harmony/repo/web
+
+<span class="cmt"># Instalar dependencias npm</span>
+<span class="cmd">npm</span> ci
+
+<span class="cmt"># Crear archivo de variables de entorno para el build</span>
+<span class="cmd">cat</span> > .env.production << 'EOF'
+VITE_API_URL=https://harmony.tuempresa.com/api
+VITE_WS_URL=wss://harmony.tuempresa.com/ws
+EOF
+
+<span class="cmt"># Compilar para producción</span>
+<span class="cmd">npm</span> run build
+
+<span class="cmt"># Copiar los archivos estáticos al directorio de Nginx</span>
+<span class="cmd">sudo</span> cp -r dist/* /var/www/harmony/
+<span class="cmd">sudo</span> chown -R www-data:www-data /var/www/harmony</code></pre>
+      <div class="box info"><span class="box-icon">ℹ</span><div class="box-text">El directorio <code>dist/</code> contiene todos los archivos HTML, JS y CSS minificados. Nginx los servirá directamente sin tocar el API de Go.</div></div>
+    </div>
+  </div>
+
+  <!-- SYSTEMD -->
+  <h2 id="systemd">Paso 16 — Servicio systemd</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">18</div><div class="step-title">Crear el servicio systemd para el API</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">sudo</span> nano /etc/systemd/system/harmony-api.service</code></pre>
+      <p>Pega este contenido exacto:</p>
+      <pre><code><span class="cmt">[Unit]</span>
+<span class="key">Description</span>=<span class="val">Harmony v3 API</span>
+<span class="key">After</span>=<span class="val">network.target postgresql.service redis.service</span>
+<span class="key">Wants</span>=<span class="val">postgresql.service redis.service</span>
+
+<span class="cmt">[Service]</span>
+<span class="key">Type</span>=<span class="val">simple</span>
+<span class="key">User</span>=<span class="val">harmony</span>
+<span class="key">Group</span>=<span class="val">harmony</span>
+<span class="key">WorkingDirectory</span>=<span class="val">/opt/harmony</span>
+<span class="key">EnvironmentFile</span>=<span class="val">/opt/harmony/.env</span>
+<span class="key">ExecStart</span>=<span class="val">/opt/harmony/bin/harmony-api</span>
+<span class="key">Restart</span>=<span class="val">always</span>
+<span class="key">RestartSec</span>=<span class="val">5</span>
+<span class="key">StandardOutput</span>=<span class="val">journal</span>
+<span class="key">StandardError</span>=<span class="val">journal</span>
+<span class="key">SyslogIdentifier</span>=<span class="val">harmony-api</span>
+
+<span class="cmt"># Límites de seguridad</span>
+<span class="key">NoNewPrivileges</span>=<span class="val">true</span>
+<span class="key">ProtectSystem</span>=<span class="val">strict</span>
+<span class="key">ReadWritePaths</span>=<span class="val">/opt/harmony/uploads</span>
+<span class="key">LimitNOFILE</span>=<span class="val">65536</span>
+
+<span class="cmt">[Install]</span>
+<span class="key">WantedBy</span>=<span class="val">multi-user.target</span></code></pre>
+      <pre><code><span class="cmt"># Crear directorio de uploads</span>
+<span class="cmd">sudo</span> mkdir -p /opt/harmony/uploads
+<span class="cmd">sudo</span> chown harmony:harmony /opt/harmony/uploads
+
+<span class="cmt"># Recargar systemd y activar el servicio</span>
+<span class="cmd">sudo</span> systemctl daemon-reload
+<span class="cmd">sudo</span> systemctl enable harmony-api
+<span class="cmd">sudo</span> systemctl start harmony-api
+
+<span class="cmt"># Verificar que esté corriendo</span>
+<span class="cmd">sudo</span> systemctl status harmony-api</code></pre>
+      <div class="box tip"><span class="box-icon">✓</span><div class="box-text">Para ver los logs en tiempo real: <code>sudo journalctl -u harmony-api -f</code></div></div>
+    </div>
+  </div>
+
+  <!-- NGINX CONFIG -->
+  <h2 id="nginx-config">Paso 17 — Configurar Nginx</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">19</div><div class="step-title">Crear la configuración de Nginx para Harmony</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">sudo</span> nano /etc/nginx/sites-available/harmony</code></pre>
+      <p>Pega esta configuración (reemplaza <code>harmony.tuempresa.com</code> con tu dominio real):</p>
+      <pre><code><span class="cmt"># Redirigir HTTP → HTTPS</span>
+<span class="key">server</span> {
+    listen 80;
+    server_name harmony.tuempresa.com;
+    return 301 https://$host$request_uri;
+}
+
+<span class="key">server</span> {
+    listen 443 ssl http2;
+    server_name harmony.tuempresa.com;
+
+    <span class="cmt"># SSL (Certbot llenará estas rutas)</span>
+    ssl_certificate /etc/letsencrypt/live/harmony.tuempresa.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/harmony.tuempresa.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    <span class="cmt"># Headers de seguridad</span>
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    <span class="cmt"># Frontend React (archivos estáticos)</span>
+    root /var/www/harmony;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    <span class="cmt"># Caché de assets (1 año para JS/CSS/imágenes con hash)</span>
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2|woff)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    <span class="cmt"># API Go (proxy inverso)</span>
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        proxy_connect_timeout 10s;
+        client_max_body_size 50M;
+    }
+
+    <span class="cmt"># WebSocket (para el inbox en tiempo real)</span>
+    location /ws {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+}</code></pre>
+      <pre><code><span class="cmt"># Activar el sitio</span>
+<span class="cmd">sudo</span> ln -s /etc/nginx/sites-available/harmony /etc/nginx/sites-enabled/
+
+<span class="cmt"># Eliminar el sitio por defecto</span>
+<span class="cmd">sudo</span> rm -f /etc/nginx/sites-enabled/default
+
+<span class="cmt"># Verificar que la configuración es válida</span>
+<span class="cmd">sudo</span> nginx -t</code></pre>
+    </div>
+  </div>
+
+  <!-- SSL -->
+  <h2 id="ssl">Paso 18 — Certificado SSL</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">20</div><div class="step-title">Apuntar el DNS y obtener el certificado SSL</div></div>
+    <div class="step-body">
+      <div class="box warn"><span class="box-icon">⚠</span><div class="box-text"><strong>Primero apunta el DNS</strong> En tu proveedor de dominio, crea un registro A que apunte <code>harmony.tuempresa.com</code> a la IP pública de tu VM. Espera 5–10 minutos para que propague antes de ejecutar Certbot.</div></div>
+      <pre><code><span class="cmt"># Reiniciar Nginx antes de obtener el certificado</span>
+<span class="cmd">sudo</span> systemctl start nginx
+
+<span class="cmt"># Obtener certificado SSL gratuito de Let's Encrypt</span>
+<span class="cmd">sudo</span> certbot --nginx -d harmony.tuempresa.com
+
+<span class="cmt"># Certbot te pedirá:
+# - Tu email (para notificaciones de expiración)
+# - Aceptar los términos (Y)
+# - Si compartir email con EFF (N)
+# Certbot modificará automáticamente el archivo de Nginx con las rutas SSL</span>
+
+<span class="cmt"># Renovación automática (ya viene configurada, pero verifica)</span>
+<span class="cmd">sudo</span> certbot renew --dry-run</code></pre>
+    </div>
+  </div>
+
+  <!-- VERIFICAR -->
+  <h2 id="verificar">Paso 19 — Verificar que todo funciona</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">21</div><div class="step-title">Comprobaciones finales</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># 1. Estado de todos los servicios</span>
+<span class="cmd">sudo</span> systemctl status harmony-api postgresql redis nginx
+
+<span class="cmt"># 2. El API responde correctamente</span>
+<span class="cmd">curl</span> https://harmony.tuempresa.com/api/system-config
+<span class="cmt"># Debe devolver: {"app_name":"Harmony","favicon_url":""}</span>
+
+<span class="cmt"># 3. Ver logs del API en tiempo real</span>
+<span class="cmd">sudo</span> journalctl -u harmony-api -f
+
+<span class="cmt"># 4. Ver logs de Nginx</span>
+<span class="cmd">sudo</span> tail -f /var/log/nginx/error.log</code></pre>
+      <div class="box tip"><span class="box-icon">✓</span><div class="box-text"><strong>¡Listo!</strong> Accede a <code>https://harmony.tuempresa.com</code> en el navegador. Deberías ver la pantalla de login de Harmony v3.</div></div>
+      <div class="box info"><span class="box-icon">ℹ</span><div class="box-text"><strong>Primer superadmin</strong> Crea el superadmin directamente en la base de datos: <code>sudo -u postgres psql -d harmony_system</code> e inserta un usuario con role='superadmin' y password hasheado con bcrypt.</div></div>
+    </div>
+  </div>
+
+  <h2>Comandos de mantenimiento</h2>
+  <pre><code><span class="cmt"># Reiniciar el API después de actualizar el binario</span>
+<span class="cmd">sudo</span> systemctl restart harmony-api
+
+<span class="cmt"># Ver últimas 100 líneas de logs</span>
+<span class="cmd">sudo</span> journalctl -u harmony-api -n 100
+
+<span class="cmt"># Verificar memoria y CPU del servicio</span>
+<span class="cmd">sudo</span> systemctl show harmony-api --property=MemoryCurrent,CPUUsageNSec
+
+<span class="cmt"># Backup de la base de datos</span>
+<span class="cmd">sudo</span> -u postgres pg_dump harmony_system > /tmp/backup_system_$(date +%Y%m%d).sql</code></pre>
+</main>
+</div>
+</body>

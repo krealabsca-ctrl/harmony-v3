@@ -1,0 +1,23 @@
+[Unit]
+Description=Harmony v3 API
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=harmony
+Group=harmony
+WorkingDirectory=/opt/harmony
+EnvironmentFile=/opt/harmony/.env
+ExecStart=/opt/harmony/bin/harmony-api
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/harmony/uploads
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

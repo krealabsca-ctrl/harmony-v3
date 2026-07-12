@@ -1,0 +1,74 @@
+GITHUB ACTIONS — INSTRUCCIONES CI/CD
+=====================================
+
+PASO 1: Generar clave SSH en el servidor
+-----------------------------------------
+Ejecuta esto en tu servidor (Azure o DigitalOcean):
+
+  ssh-keygen -t ed25519 -C "github-actions-harmony" \
+             -f /root/.ssh/github_actions_deploy -N ""
+
+  cat /root/.ssh/github_actions_deploy.pub >> /root/.ssh/authorized_keys
+  chmod 600 /root/.ssh/authorized_keys
+
+  # Muestra la clave PRIVADA que necesitas copiar:
+  cat /root/.ssh/github_actions_deploy
+
+
+PASO 2: Agregar los 3 Secrets en GitHub
+-----------------------------------------
+Ve a: Tu repositorio → Settings → Secrets and variables → Actions → New repository secret
+
+  SECRET: SERVER_HOST
+  VALOR:  IP pública de tu servidor (ej: 20.195.x.x para Azure, 167.99.x.x para DO)
+
+  SECRET: SERVER_USER
+  VALOR:  root  (o el usuario SSH que uses)
+
+  SECRET: SSH_PRIVATE_KEY
+  VALOR:  Pega TODO el contenido del archivo /root/.ssh/github_actions_deploy
+          incluyendo las líneas:
+            -----BEGIN OPENSSH PRIVATE KEY-----
+            ...
+            -----END OPENSSH PRIVATE KEY-----
+
+
+PASO 3: Copiar el workflow al repositorio
+-----------------------------------------
+Copia el archivo deploy.yml de esta carpeta a tu repositorio en:
+  .github/workflows/deploy.yml
+
+Luego haz commit y push:
+  git add .github/workflows/deploy.yml
+  git commit -m "ci: agregar deploy automático con GitHub Actions"
+  git push origin main
+
+
+PASO 4: Verificar
+-----------------
+Ve a tu repositorio en GitHub → pestaña "Actions".
+Deberías ver el workflow "Deploy Harmony v3" corriendo.
+Cuando aparece ✓ verde, el código nuevo ya está en producción.
+
+
+TIEMPOS APROXIMADOS DEL PIPELINE
+----------------------------------
+  git pull             ~5 segundos
+  go build             ~30-60 segundos
+  npm ci + npm build   ~60-90 segundos
+  systemctl restart    ~5 segundos
+  TOTAL:               ~2-3 minutos por deploy
+
+
+ROLLBACK DE EMERGENCIA
+-----------------------
+  Opción A — Revertir en Git (activa el pipeline automáticamente):
+    git revert HEAD
+    git push origin main
+
+  Opción B — Rollback manual en el servidor:
+    ssh root@TU_IP
+    cd /opt/harmony/repo
+    git log --oneline -5
+    git checkout HASH_COMMIT_BUENO
+    bash /opt/harmony/deploy.sh

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- A-12: subconjunto de CSP seguro para Vite (no restringe script/style, que rompería
+         el HMR de dev). La CSP completa con script-src/frame-ancestors debe fijarse como
+         cabecera en el servidor que sirve el SPA (nginx) en producción. -->
+    <meta http-equiv="Content-Security-Policy" content="object-src 'none'; base-uri 'self'; form-action 'self'" />
+    <title>Harmony</title>
+    <script src="/theme-init.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

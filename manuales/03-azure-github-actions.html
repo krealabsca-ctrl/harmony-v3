@@ -1,0 +1,374 @@
+<!doctype html>
+<title>Harmony v3 — Azure + GitHub Actions CI/CD</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2333;
+  --border:#30363d;--border2:#21262d;
+  --accent:#0078d4;--accent2:#2ea043;--accent3:#8b5cf6;
+  --text:#e6edf3;--text2:#8b949e;--text3:#484f58;
+  --green:#3fb950;--yellow:#d29922;--red:#f85149;--orange:#e3b341;
+  --code-bg:#0d1117;--code-border:#21262d;
+  font-size:15px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;line-height:1.6;min-height:100vh}
+.wrapper{display:grid;grid-template-columns:250px 1fr;min-height:100vh;max-width:1200px;margin:0 auto}
+.sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;padding:24px 16px;border-right:1px solid var(--border2);background:var(--surface)}
+.content{padding:48px 56px;max-width:840px}
+@media(max-width:900px){.wrapper{grid-template-columns:1fr}.sidebar{display:none}.content{padding:32px 24px}}
+.sidebar-logo{margin-bottom:28px;padding-bottom:16px;border-bottom:1px solid var(--border2)}
+.badge-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.badge{font-size:10px;font-weight:700;letter-spacing:.08em;padding:2px 7px;border-radius:4px;text-transform:uppercase}
+.badge.az{background:var(--accent);color:#fff}
+.badge.gh{background:var(--accent2);color:#fff}
+.sidebar-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px}
+nav ul{list-style:none}
+nav li a{display:block;padding:5px 10px;font-size:12.5px;color:var(--text2);text-decoration:none;border-radius:5px;border-left:2px solid transparent;transition:all .15s}
+nav li a:hover{color:var(--text);background:var(--surface2);border-left-color:var(--accent)}
+nav .section-label{font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);padding:16px 10px 4px}
+.flow-diagram{display:flex;align-items:center;gap:0;margin:24px 0;flex-wrap:wrap;gap:6px}
+.flow-node{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;color:var(--text)}
+.flow-node.gh-node{border-color:var(--accent2);color:var(--accent2)}
+.flow-node.az-node{border-color:var(--accent);color:var(--accent)}
+.flow-node.srv-node{border-color:var(--accent3);color:var(--accent3)}
+.flow-arrow{color:var(--text3);font-size:14px}
+.doc-header{margin-bottom:40px;padding-bottom:28px;border-bottom:1px solid var(--border2)}
+.doc-eyebrow{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent2);margin-bottom:12px}
+.doc-eyebrow::before{content:'';display:block;width:18px;height:2px;background:var(--accent2)}
+h1{font-size:28px;font-weight:700;line-height:1.25;text-wrap:balance;color:var(--text);margin-bottom:10px}
+.doc-meta{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
+.meta-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--text2);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:3px 10px}
+.step{margin-bottom:40px}
+.step-header{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
+.step-num{flex-shrink:0;width:30px;height:30px;border-radius:50%;background:var(--accent2);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:2px}
+.step-title{font-size:17px;font-weight:600;color:var(--text);text-wrap:balance}
+.step-body{padding-left:44px}
+.step-body p{color:var(--text2);font-size:14px;margin-bottom:12px;line-height:1.7}
+h2{font-size:20px;font-weight:700;color:var(--text);margin:44px 0 20px;padding-top:12px;border-top:1px solid var(--border2)}
+h3{font-size:15px;font-weight:600;color:var(--text);margin:20px 0 10px}
+pre{background:var(--code-bg);border:1px solid var(--code-border);border-radius:8px;padding:16px 20px;overflow-x:auto;margin:12px 0;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12.5px;line-height:1.65}
+code{font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12.5px}
+pre code{color:#e6edf3;background:none;padding:0}
+.cmd{color:#79c0ff}.cmt{color:#8b949e}.str{color:#a5d6ff}.key{color:#ff7b72}.val{color:#ffa657}.yaml-key{color:#7ee787}.yaml-val{color:#a5d6ff}.yaml-cmt{color:#8b949e}.yaml-str{color:#ffa657}
+:not(pre) > code{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:12px;color:#a5d6ff}
+.box{border-radius:8px;padding:14px 18px;font-size:13.5px;margin:14px 0;display:grid;grid-template-columns:18px 1fr;gap:0 10px;align-items:start}
+.box-icon{font-size:15px;line-height:1.6}
+.box-text{color:var(--text2);line-height:1.6}
+.box-text strong{display:block;margin-bottom:3px;font-size:13px;font-weight:700}
+.box.warn{background:#211a00;border:1px solid #573a00}.box.warn .box-icon{color:var(--yellow)}
+.box.tip{background:#0a1f1a;border:1px solid #0d3a2e}.box.tip .box-icon{color:var(--green)}
+.box.info{background:#000d24;border:1px solid #002060}.box.info .box-icon{color:#4da6ff}
+.box.danger{background:#1a0a0a;border:1px solid #5a1a1a}.box.danger .box-icon{color:var(--red)}
+.file-label{font-size:11px;font-weight:600;color:var(--accent2);text-transform:uppercase;letter-spacing:.08em;padding:6px 12px;background:var(--surface2);border:1px solid var(--border2);border-bottom:none;border-radius:6px 6px 0 0;display:inline-block}
+.file-label+pre{border-radius:0 6px 6px 6px;margin-top:0}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:16px 0}
+th{text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)}
+td{padding:9px 12px;border-bottom:1px solid var(--border2);color:var(--text2);vertical-align:top}
+td:first-child{color:var(--text);font-weight:500}
+p{font-size:14px;line-height:1.7;color:var(--text2);margin-bottom:12px}
+</style>
+<body>
+<div class="wrapper">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-title">Harmony v3 — CI/CD</div>
+    <div class="badge-row"><span class="badge az">Azure</span><span class="badge gh">GitHub Actions</span></div>
+  </div>
+  <nav>
+    <div class="section-label">Cómo funciona</div>
+    <ul>
+      <li><a href="#flujo">Flujo del pipeline</a></li>
+    </ul>
+    <div class="section-label">Preparación Azure</div>
+    <ul>
+      <li><a href="#vm">VM + dependencias</a></li>
+      <li><a href="#app-setup">Estructura en el servidor</a></li>
+    </ul>
+    <div class="section-label">Preparación GitHub</div>
+    <ul>
+      <li><a href="#ssh-key">Generar clave SSH</a></li>
+      <li><a href="#gh-secrets">Agregar Secrets</a></li>
+    </ul>
+    <div class="section-label">Pipeline</div>
+    <ul>
+      <li><a href="#workflow-file">Archivo del workflow</a></li>
+      <li><a href="#script-deploy">Script en el servidor</a></li>
+    </ul>
+    <div class="section-label">Configuración final</div>
+    <ul>
+      <li><a href="#nginx">Nginx + SSL</a></li>
+      <li><a href="#primer-deploy">Primer despliegue</a></li>
+      <li><a href="#verificar">Verificar pipeline</a></li>
+      <li><a href="#rollback">Rollback</a></li>
+    </ul>
+  </nav>
+</aside>
+<main class="content">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Harmony v3 · CI/CD Automático</div>
+    <h1>Azure + GitHub Actions<br>— Despliegue automático</h1>
+    <p>Cada push a <code>main</code> compila y despliega automáticamente en la VM de Azure. Cero intervención manual.</p>
+    <div class="doc-meta">
+      <span class="meta-chip">~35 min setup inicial</span>
+      <span class="meta-chip">Ubuntu 22.04 LTS</span>
+      <span class="meta-chip">GitHub Actions</span>
+    </div>
+  </div>
+
+  <h2 id="flujo">Cómo funciona el pipeline</h2>
+  <div class="flow-diagram">
+    <div class="flow-node gh-node">Push a main</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node gh-node">GitHub Actions</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node az-node">SSH a Azure VM</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node srv-node">git pull + build + restart</div>
+  </div>
+  <p>La estrategia es <strong>pull + build en el servidor</strong>: GitHub Actions hace SSH al servidor y ejecuta un script que descarga el código nuevo, compila Go, compila React, y reinicia el servicio. Simple y sin artefactos cross-compilation.</p>
+
+  <h2 id="vm">Paso 1 — Preparar la VM de Azure</h2>
+  <p>Primero asegúrate de tener la VM funcionando con todas las dependencias. Si ya tienes el despliegue manual listo, salta al <a href="#ssh-key">Paso 2</a>. Si es una VM nueva, instala lo siguiente (como root/sudo):</p>
+  <pre><code><span class="cmt"># Instalar dependencias (igual que en el manual de Azure)</span>
+<span class="cmd">apt</span> update && apt upgrade -y
+<span class="cmd">apt</span> install -y git curl wget build-essential nginx certbot python3-certbot-nginx redis-server
+
+<span class="cmt"># Go 1.22</span>
+<span class="cmd">wget</span> https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
+<span class="cmd">tar</span> -C /usr/local -xzf go1.22.5.linux-amd64.tar.gz
+<span class="cmd">echo</span> 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/go.sh
+
+<span class="cmt"># Node.js 20</span>
+<span class="cmd">curl</span> -fsSL https://deb.nodesource.com/setup_20.x | bash -
+<span class="cmd">apt</span> install -y nodejs
+
+<span class="cmt"># PostgreSQL 16</span>
+<span class="cmd">/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh</span> -y
+<span class="cmd">apt</span> install -y postgresql-16
+<span class="cmd">systemctl</span> enable --now postgresql redis-server</code></pre>
+
+  <h2 id="app-setup">Paso 2 — Estructura del servidor</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">1</div><div class="step-title">Clonar el repositorio en el servidor</div></div>
+    <div class="step-body">
+      <p>El pipeline usará <code>git pull</code> para actualizar el código. El repositorio debe estar clonado en el servidor.</p>
+      <pre><code><span class="cmt"># Crear estructura</span>
+<span class="cmd">useradd</span> --system --no-create-home --shell /bin/false harmony
+<span class="cmd">mkdir</span> -p /opt/harmony/bin /opt/harmony/uploads
+<span class="cmd">mkdir</span> -p /var/www/harmony
+
+<span class="cmt"># Clonar el repositorio (como root)</span>
+<span class="cmd">git</span> clone https://github.com/TU_ORG/harmony-v3.git /opt/harmony/repo
+
+<span class="cmt"># Permisos</span>
+<span class="cmd">chown</span> -R harmony:harmony /opt/harmony
+<span class="cmd">chown</span> -R www-data:www-data /var/www/harmony</code></pre>
+      <div class="box info"><span class="box-icon">ℹ</span><div class="box-text">Si el repositorio es privado, agrega un <strong>Deploy Key</strong> de solo lectura en GitHub: ve a <em>Settings → Deploy Keys → Add Deploy Key</em> y pega la clave pública del servidor (<code>cat ~/.ssh/id_rsa.pub</code> o genera una nueva).</div></div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-header"><div class="step-num">2</div><div class="step-title">Crear el .env y la base de datos</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Crear .env (nunca se guarda en Git)</span>
+<span class="cmd">nano</span> /opt/harmony/.env
+<span class="cmt"># (completa igual que en el manual de Azure)</span>
+<span class="cmd">chmod</span> 600 /opt/harmony/.env
+<span class="cmd">chown</span> harmony:harmony /opt/harmony/.env
+
+<span class="cmt"># Crear base de datos PostgreSQL</span>
+<span class="cmd">sudo</span> -u postgres psql -c "CREATE USER harmony WITH PASSWORD 'TuPasswordAqui';"
+<span class="cmd">sudo</span> -u postgres psql -c "CREATE DATABASE harmony_system OWNER harmony;"
+<span class="cmd">sudo</span> -u postgres psql -c "ALTER USER harmony CREATEDB;"</code></pre>
+    </div>
+  </div>
+
+  <h2 id="ssh-key">Paso 3 — Clave SSH para GitHub Actions</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">3</div><div class="step-title">Generar un par de claves SSH dedicado para CI/CD</div></div>
+    <div class="step-body">
+      <p>Ejecuta esto <strong>en el servidor de Azure</strong> (no en tu máquina local).</p>
+      <pre><code><span class="cmt"># Generar clave SSH sin passphrase para GitHub Actions</span>
+<span class="cmd">ssh-keygen</span> -t ed25519 -C "github-actions-harmony" -f /root/.ssh/github_actions_deploy -N ""
+
+<span class="cmt"># Agregar la clave pública al authorized_keys del servidor</span>
+<span class="cmd">cat</span> /root/.ssh/github_actions_deploy.pub >> /root/.ssh/authorized_keys
+<span class="cmd">chmod</span> 600 /root/.ssh/authorized_keys
+
+<span class="cmt"># Mostrar la clave PRIVADA (cópiala para el Paso 4)</span>
+<span class="cmd">cat</span> /root/.ssh/github_actions_deploy
+<span class="cmt"># -----BEGIN OPENSSH PRIVATE KEY-----</span>
+<span class="cmt"># b3BlbnNzaC1rZXktdjEAAAA...   ← copia TODO esto incluyendo las líneas "---"</span>
+<span class="cmt"># -----END OPENSSH PRIVATE KEY-----</span></code></pre>
+      <div class="box danger"><span class="box-icon">✗</span><div class="box-text"><strong>Nunca guardes la clave privada en Git.</strong> Solo va en los Secrets de GitHub, nunca en el repositorio.</div></div>
+    </div>
+  </div>
+
+  <h2 id="gh-secrets">Paso 4 — Configurar los Secrets en GitHub</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">4</div><div class="step-title">Agregar los secrets en el repositorio de GitHub</div></div>
+    <div class="step-body">
+      <p>Ve a tu repositorio → <strong>Settings → Secrets and variables → Actions → New repository secret</strong>.</p>
+      <p>Agrega estos 3 secrets:</p>
+      <table>
+        <thead><tr><th>Secret Name</th><th>Valor</th></tr></thead>
+        <tbody>
+          <tr><td><code>SERVER_HOST</code></td><td>La IP pública de tu VM de Azure (ej: <code>20.195.x.x</code>)</td></tr>
+          <tr><td><code>SERVER_USER</code></td><td><code>root</code> (o el usuario que tiene acceso SSH)</td></tr>
+          <tr><td><code>SSH_PRIVATE_KEY</code></td><td>Todo el contenido del archivo <code>/root/.ssh/github_actions_deploy</code></td></tr>
+        </tbody>
+      </table>
+      <div class="box tip"><span class="box-icon">✓</span><div class="box-text">Para pegar la clave privada: copia desde <code>-----BEGIN OPENSSH PRIVATE KEY-----</code> hasta <code>-----END OPENSSH PRIVATE KEY-----</code>, incluyendo esas líneas.</div></div>
+    </div>
+  </div>
+
+  <h2 id="workflow-file">Paso 5 — El archivo del workflow</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">5</div><div class="step-title">Crear el archivo de GitHub Actions en el repositorio</div></div>
+    <div class="step-body">
+      <p>Crea este archivo <strong>en tu máquina local</strong> dentro del repositorio y haz commit:</p>
+      <div class="file-label">.github/workflows/deploy.yml</div>
+      <pre><code><span class="yaml-key">name</span>: <span class="yaml-val">Deploy Harmony v3</span>
+
+<span class="yaml-key">on</span>:
+  <span class="yaml-key">push</span>:
+    <span class="yaml-key">branches</span>:
+      - <span class="yaml-val">main</span>
+
+<span class="yaml-key">jobs</span>:
+  <span class="yaml-key">deploy</span>:
+    <span class="yaml-key">name</span>: <span class="yaml-val">Deploy to Azure VM</span>
+    <span class="yaml-key">runs-on</span>: <span class="yaml-val">ubuntu-latest</span>
+    <span class="yaml-key">timeout-minutes</span>: <span class="yaml-val">15</span>
+
+    <span class="yaml-key">steps</span>:
+      - <span class="yaml-key">name</span>: <span class="yaml-val">Deploy via SSH</span>
+        <span class="yaml-key">uses</span>: <span class="yaml-val">appleboy/ssh-action@v1.0.3</span>
+        <span class="yaml-key">with</span>:
+          <span class="yaml-key">host</span>: <span class="yaml-val">${{ secrets.SERVER_HOST }}</span>
+          <span class="yaml-key">username</span>: <span class="yaml-val">${{ secrets.SERVER_USER }}</span>
+          <span class="yaml-key">key</span>: <span class="yaml-val">${{ secrets.SSH_PRIVATE_KEY }}</span>
+          <span class="yaml-key">script</span>: <span class="yaml-val">|</span>
+            <span class="yaml-val">bash /opt/harmony/deploy.sh 2>&amp;1</span></code></pre>
+    </div>
+  </div>
+
+  <h2 id="script-deploy">Paso 6 — Script de despliegue en el servidor</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">6</div><div class="step-title">Crear el script que ejecuta el pipeline</div></div>
+    <div class="step-body">
+      <p>Crea este archivo <strong>en el servidor de Azure</strong>:</p>
+      <pre><code><span class="cmd">nano</span> /opt/harmony/deploy.sh</code></pre>
+      <div class="file-label">/opt/harmony/deploy.sh</div>
+      <pre><code>#!/bin/bash
+set -e
+
+export PATH=$PATH:/usr/local/go/bin
+REPO_DIR="/opt/harmony/repo"
+BIN_DIR="/opt/harmony/bin"
+WEB_DIR="/var/www/harmony"
+
+echo "=== [1/5] Actualizando código ==="
+cd "$REPO_DIR"
+git pull origin main
+
+echo "=== [2/5] Compilando API Go ==="
+cd "$REPO_DIR/api"
+go mod download
+go build -ldflags="-s -w" -o "$BIN_DIR/harmony-api-new" ./cmd/server/main.go
+mv "$BIN_DIR/harmony-api-new" "$BIN_DIR/harmony-api"
+chown harmony:harmony "$BIN_DIR/harmony-api"
+
+echo "=== [3/5] Compilando Frontend React ==="
+cd "$REPO_DIR/web"
+npm ci --prefer-offline
+npm run build
+
+echo "=== [4/5] Actualizando archivos estáticos ==="
+rm -rf "$WEB_DIR"/*
+cp -r dist/* "$WEB_DIR/"
+chown -R www-data:www-data "$WEB_DIR"
+
+echo "=== [5/5] Reiniciando servicio ==="
+systemctl restart harmony-api
+systemctl status harmony-api --no-pager
+
+echo "=== Deploy completado: $(date) ==="</code></pre>
+      <pre><code><span class="cmd">chmod</span> +x /opt/harmony/deploy.sh</code></pre>
+      <div class="box tip"><span class="box-icon">✓</span><div class="box-text">El script compila el nuevo binario como <code>harmony-api-new</code> primero, y solo lo reemplaza si compila sin errores. Esto evita que un error de compilación borre el binario funcional.</div></div>
+    </div>
+  </div>
+
+  <h2 id="nginx">Paso 7 — Nginx + SSL</h2>
+  <p>Configura Nginx exactamente como en el manual de Azure manual (misma configuración de proxy, WebSocket, SSL). Si ya lo tienes configurado, pasa al Paso 8.</p>
+  <pre><code><span class="cmt"># Crear config de Nginx (igual que en el manual de Azure)</span>
+<span class="cmd">nano</span> /etc/nginx/sites-available/harmony
+<span class="cmt"># (pega la configuración del manual de Azure)</span>
+
+<span class="cmd">ln</span> -s /etc/nginx/sites-available/harmony /etc/nginx/sites-enabled/
+<span class="cmd">nginx</span> -t && systemctl restart nginx
+
+<span class="cmt"># SSL</span>
+<span class="cmd">certbot</span> --nginx -d harmony.tuempresa.com
+
+<span class="cmt"># Servicio systemd</span>
+<span class="cmd">nano</span> /etc/systemd/system/harmony-api.service
+<span class="cmt"># (crea el servicio igual que en el manual de Azure)</span>
+<span class="cmd">systemctl</span> daemon-reload
+<span class="cmd">systemctl</span> enable harmony-api</code></pre>
+
+  <h2 id="primer-deploy">Paso 8 — Primer despliegue manual</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">7</div><div class="step-title">Ejecutar el deploy.sh por primera vez manualmente</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Ejecutar el script de despliegue manualmente la primera vez</span>
+<span class="cmd">bash</span> /opt/harmony/deploy.sh
+
+<span class="cmt"># Iniciar el servicio</span>
+<span class="cmd">systemctl</span> start harmony-api
+<span class="cmd">systemctl</span> status harmony-api</code></pre>
+    </div>
+  </div>
+
+  <h2 id="verificar">Paso 9 — Verificar que el pipeline funciona</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">8</div><div class="step-title">Hacer push y observar el pipeline</div></div>
+    <div class="step-body">
+      <p>En tu máquina local, haz cualquier cambio, commit y push a <code>main</code>:</p>
+      <pre><code><span class="cmt"># En tu máquina local</span>
+<span class="cmd">git</span> add .github/workflows/deploy.yml
+<span class="cmd">git</span> commit -m "ci: agregar GitHub Actions para deploy en Azure"
+<span class="cmd">git</span> push origin main</code></pre>
+      <p>Ve a tu repositorio en GitHub → <strong>Actions</strong>. Deberías ver el workflow corriendo. Clic en él para ver los logs en tiempo real.</p>
+      <div class="box tip"><span class="box-icon">✓</span><div class="box-text"><strong>El deploy tarda ~2-3 minutos</strong> (git pull + go build + npm build). Cuando el Action muestra ✓ en verde, el nuevo código ya está en producción.</div></div>
+    </div>
+  </div>
+
+  <h2 id="rollback">Paso 10 — Rollback de emergencia</h2>
+  <p>Si un deploy rompe la app, puedes revertir en segundos:</p>
+  <pre><code><span class="cmt"># Opción 1: Revertir en Git y hacer push (activa el pipeline con el commit anterior)</span>
+<span class="cmd">git</span> revert HEAD
+<span class="cmd">git</span> push origin main
+
+<span class="cmt"># Opción 2: Rollback manual directo en el servidor</span>
+<span class="cmd">ssh</span> root@TU_IP_AZURE
+<span class="cmd">cd</span> /opt/harmony/repo
+<span class="cmd">git</span> log --oneline -5           <span class="cmt"># ver últimos commits</span>
+<span class="cmd">git</span> checkout HASH_DEL_COMMIT_BUENO  <span class="cmt"># volver al commit anterior</span>
+<span class="cmd">bash</span> /opt/harmony/deploy.sh    <span class="cmt"># recompilar y reiniciar</span></code></pre>
+  <div class="box warn"><span class="box-icon">⚠</span><div class="box-text">Después de un rollback manual con <code>git checkout</code>, recuerda que el servidor quedará en modo "detached HEAD". Para el siguiente deploy desde GitHub Actions, haz <code>git checkout main && git pull</code> primero.</div></div>
+
+  <h2>Monitoreo post-deploy</h2>
+  <pre><code><span class="cmt"># Estado del servicio</span>
+<span class="cmd">systemctl</span> status harmony-api
+
+<span class="cmt"># Logs en tiempo real</span>
+<span class="cmd">journalctl</span> -u harmony-api -f
+
+<span class="cmt"># Ver los últimos deploys (commits)</span>
+<span class="cmd">cd</span> /opt/harmony/repo && git log --oneline -10</code></pre>
+</main>
+</div>
+</body>

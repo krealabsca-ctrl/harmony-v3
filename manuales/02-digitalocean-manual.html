@@ -1,0 +1,553 @@
+<!doctype html>
+<title>Harmony v3 — Despliegue en DigitalOcean (Manual)</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2333;
+  --border:#30363d;--border2:#21262d;
+  --accent:#0069ff;--accent-dim:#001a40;--accent-glow:#0069ff26;
+  --text:#e6edf3;--text2:#8b949e;--text3:#484f58;
+  --green:#3fb950;--yellow:#d29922;--red:#f85149;--orange:#e3b341;
+  --code-bg:#0d1117;--code-border:#21262d;
+  font-size:15px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;line-height:1.6;min-height:100vh}
+.wrapper{display:grid;grid-template-columns:240px 1fr;min-height:100vh;max-width:1200px;margin:0 auto}
+.sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;padding:24px 16px;border-right:1px solid var(--border2);background:var(--surface)}
+.content{padding:48px 56px;max-width:820px}
+@media(max-width:900px){.wrapper{grid-template-columns:1fr}.sidebar{display:none}.content{padding:32px 24px}}
+.sidebar-logo{display:flex;align-items:center;gap:10px;margin-bottom:28px;padding-bottom:16px;border-bottom:1px solid var(--border2)}
+.sidebar-logo .badge{background:var(--accent);color:#fff;font-size:10px;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:4px;text-transform:uppercase}
+.sidebar-logo .plat{font-size:12px;color:var(--text2);font-weight:500}
+nav ul{list-style:none}
+nav li a{display:block;padding:5px 10px;font-size:12.5px;color:var(--text2);text-decoration:none;border-radius:5px;border-left:2px solid transparent;transition:all .15s}
+nav li a:hover{color:var(--text);background:var(--surface2);border-left-color:var(--accent)}
+nav .section-label{font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);padding:16px 10px 4px}
+.doc-header{margin-bottom:40px;padding-bottom:28px;border-bottom:1px solid var(--border2)}
+.doc-eyebrow{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+.doc-eyebrow::before{content:'';display:block;width:18px;height:2px;background:var(--accent)}
+h1{font-size:28px;font-weight:700;line-height:1.25;text-wrap:balance;color:var(--text);margin-bottom:10px}
+.doc-meta{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
+.meta-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--text2);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:3px 10px}
+.step{margin-bottom:40px}
+.step-header{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
+.step-num{flex-shrink:0;width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:2px}
+.step-title{font-size:17px;font-weight:600;color:var(--text);text-wrap:balance}
+.step-body{padding-left:44px}
+.step-body p{color:var(--text2);font-size:14px;margin-bottom:12px;line-height:1.7}
+h2{font-size:20px;font-weight:700;color:var(--text);margin:44px 0 20px;padding-top:12px;border-top:1px solid var(--border2)}
+h3{font-size:15px;font-weight:600;color:var(--text);margin:20px 0 10px}
+pre{background:var(--code-bg);border:1px solid var(--code-border);border-radius:8px;padding:16px 20px;overflow-x:auto;margin:12px 0;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12.5px;line-height:1.65}
+code{font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:12.5px}
+pre code{color:#e6edf3;background:none;padding:0}
+.cmd{color:#79c0ff}.cmt{color:#8b949e}.str{color:#a5d6ff}.key{color:#ff7b72}.val{color:#ffa657}
+:not(pre) > code{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:12px;color:#a5d6ff}
+.box{border-radius:8px;padding:14px 18px;font-size:13.5px;margin:14px 0;display:grid;grid-template-columns:18px 1fr;gap:0 10px;align-items:start}
+.box-icon{font-size:15px;line-height:1.6}
+.box-text{color:var(--text2);line-height:1.6}
+.box-text strong{display:block;margin-bottom:3px;font-size:13px;font-weight:700}
+.box.warn{background:#211a00;border:1px solid #573a00}.box.warn .box-icon{color:var(--yellow)}
+.box.tip{background:#0a1f1a;border:1px solid #0d3a2e}.box.tip .box-icon{color:var(--green)}
+.box.info{background:#000d24;border:1px solid #002060}.box.info .box-icon{color:#4da6ff}
+.box.danger{background:#1a0a0a;border:1px solid #5a1a1a}.box.danger .box-icon{color:var(--red)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:16px 0}
+th{text-align:left;padding:8px 12px;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)}
+td{padding:9px 12px;border-bottom:1px solid var(--border2);color:var(--text2);vertical-align:top}
+td:first-child{color:var(--text);font-weight:500}
+p{font-size:14px;line-height:1.7;color:var(--text2);margin-bottom:12px}
+</style>
+<body>
+<div class="wrapper">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div>
+      <div class="badge">DigitalOcean</div>
+      <div class="plat">Implementación Manual</div>
+    </div>
+  </div>
+  <nav>
+    <div class="section-label">Preparación</div>
+    <ul>
+      <li><a href="#prereqs">Prerrequisitos</a></li>
+      <li><a href="#droplet">Crear el Droplet</a></li>
+      <li><a href="#firewall">Firewall de DO</a></li>
+      <li><a href="#ssh">Conectar por SSH</a></li>
+      <li><a href="#dns">Configurar DNS</a></li>
+    </ul>
+    <div class="section-label">Dependencias</div>
+    <ul>
+      <li><a href="#sistema">Actualizar sistema</a></li>
+      <li><a href="#go">Instalar Go 1.22</a></li>
+      <li><a href="#node">Instalar Node.js 20</a></li>
+      <li><a href="#postgres">Instalar PostgreSQL 16</a></li>
+      <li><a href="#redis">Instalar Redis</a></li>
+      <li><a href="#nginx">Instalar Nginx</a></li>
+    </ul>
+    <div class="section-label">Configuración</div>
+    <ul>
+      <li><a href="#postgres-config">Configurar PostgreSQL</a></li>
+      <li><a href="#usuario">Usuario del sistema</a></li>
+      <li><a href="#codigo">Subir el código</a></li>
+      <li><a href="#env">Variables de entorno</a></li>
+    </ul>
+    <div class="section-label">Despliegue</div>
+    <ul>
+      <li><a href="#build-api">Compilar API</a></li>
+      <li><a href="#build-web">Compilar Frontend</a></li>
+      <li><a href="#systemd">Servicio systemd</a></li>
+      <li><a href="#nginx-config">Configurar Nginx</a></li>
+      <li><a href="#ssl">SSL Let's Encrypt</a></li>
+      <li><a href="#verificar">Verificar</a></li>
+    </ul>
+  </nav>
+</aside>
+<main class="content">
+  <div class="doc-header">
+    <div class="doc-eyebrow">Harmony v3 · Guía de Despliegue</div>
+    <h1>Implementación en DigitalOcean<br>— Paso a Paso</h1>
+    <p>Go 1.22 + React 19 + PostgreSQL 16 + Redis + Nginx en un Droplet Ubuntu 22.04 LTS.</p>
+    <div class="doc-meta">
+      <span class="meta-chip">~55 min</span>
+      <span class="meta-chip">Ubuntu 22.04 LTS</span>
+      <span class="meta-chip">$24/mes — 2 vCPU / 4 GB RAM</span>
+    </div>
+  </div>
+
+  <h2 id="prereqs">Prerrequisitos</h2>
+  <table>
+    <thead><tr><th>Requisito</th><th>Detalle</th></tr></thead>
+    <tbody>
+      <tr><td>Cuenta DigitalOcean</td><td>En <code>cloud.digitalocean.com</code> — necesitas método de pago</td></tr>
+      <tr><td>Dominio o subdominio</td><td>Por ejemplo <code>harmony.tuempresa.com</code></td></tr>
+      <tr><td>Código de Harmony v3</td><td>En repositorio Git o archivo local</td></tr>
+      <tr><td>Claves de API</td><td>Anthropic API Key, OpenAI API Key</td></tr>
+      <tr><td>Clave SSH local</td><td>Si no tienes: <code>ssh-keygen -t ed25519 -C "tu@email.com"</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="droplet">Paso 1 — Crear el Droplet</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">1</div><div class="step-title">Agregar tu clave SSH a DigitalOcean</div></div>
+    <div class="step-body">
+      <p>Antes de crear el Droplet, sube tu clave pública SSH para acceso sin contraseña.</p>
+      <p>Ve a <strong>Settings → Security → SSH Keys → Add SSH Key</strong>.</p>
+      <pre><code><span class="cmt"># En tu máquina local: mostrar tu clave pública</span>
+<span class="cmd">cat</span> ~/.ssh/id_ed25519.pub
+<span class="cmt"># Copia todo el texto que empieza con "ssh-ed25519 AAAA..." y pégalo en DO</span></code></pre>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-header"><div class="step-num">2</div><div class="step-title">Crear el Droplet con la configuración correcta</div></div>
+    <div class="step-body">
+      <p>En el panel de DO: <strong>Create → Droplets</strong>.</p>
+      <table>
+        <thead><tr><th>Campo</th><th>Valor</th></tr></thead>
+        <tbody>
+          <tr><td>Región</td><td>Nueva York 3, San Francisco 3, o Toronto (más cerca de Costa Rica)</td></tr>
+          <tr><td>Sistema operativo</td><td><strong>Ubuntu 22.04 (LTS) x64</strong></td></tr>
+          <tr><td>Plan</td><td><strong>Basic → CPU con uso regular → $24/mes</strong> (2 vCPU, 4 GB, 80 GB SSD)</td></tr>
+          <tr><td>Autenticación</td><td>Selecciona tu clave SSH que subiste antes</td></tr>
+          <tr><td>Hostname</td><td><code>harmony-prod</code></td></tr>
+          <tr><td>Backups</td><td>Activar (recomendado — +20% del costo)</td></tr>
+          <tr><td>IPv6</td><td>Activar</td></tr>
+        </tbody>
+      </table>
+      <p>Clic en <strong>Create Droplet</strong>. Tarda ~30 segundos en estar listo.</p>
+      <div class="box tip"><span class="box-icon">✓</span><div class="box-text"><strong>IP estática en DO</strong> Los Droplets de DigitalOcean tienen IP pública fija por defecto — no necesitas configurar nada extra.</div></div>
+    </div>
+  </div>
+
+  <h2 id="firewall">Paso 2 — Configurar el Firewall</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">3</div><div class="step-title">Crear un firewall en DigitalOcean</div></div>
+    <div class="step-body">
+      <p>Ve a <strong>Networking → Firewalls → Create Firewall</strong>.</p>
+      <p><strong>Reglas de entrada (Inbound):</strong></p>
+      <table>
+        <thead><tr><th>Tipo</th><th>Protocolo</th><th>Puerto</th><th>Fuentes</th></tr></thead>
+        <tbody>
+          <tr><td>SSH</td><td>TCP</td><td>22</td><td>All IPv4, All IPv6</td></tr>
+          <tr><td>HTTP</td><td>TCP</td><td>80</td><td>All IPv4, All IPv6</td></tr>
+          <tr><td>HTTPS</td><td>TCP</td><td>443</td><td>All IPv4, All IPv6</td></tr>
+        </tbody>
+      </table>
+      <p>En <strong>Apply to Droplets</strong>, selecciona tu Droplet <code>harmony-prod</code>. Clic en <strong>Create Firewall</strong>.</p>
+      <div class="box warn"><span class="box-icon">⚠</span><div class="box-text">No abras el puerto 8080. El API corre internamente y Nginx actúa como proxy.</div></div>
+    </div>
+  </div>
+
+  <h2 id="ssh">Paso 3 — Conectar por SSH</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">4</div><div class="step-title">Primera conexión al Droplet</div></div>
+    <div class="step-body">
+      <p>Copia la IP pública de tu Droplet desde el panel de DO (aparece en la vista de Droplets).</p>
+      <pre><code><span class="cmt"># Conectar al Droplet (reemplaza 159.x.x.x con tu IP)</span>
+<span class="cmd">ssh</span> root@159.x.x.x
+
+<span class="cmt"># La primera vez te preguntará si confías en el host → escribe "yes"</span></code></pre>
+      <div class="box tip"><span class="box-icon">✓</span><div class="box-text">En DigitalOcean, la conexión inicial es como <code>root</code> (a diferencia de Azure que usa un usuario no-root). Esto es normal.</div></div>
+    </div>
+  </div>
+
+  <h2 id="dns">Paso 4 — Configurar DNS</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">5</div><div class="step-title">Apuntar tu dominio al Droplet</div></div>
+    <div class="step-body">
+      <p>Tienes dos opciones para gestionar el DNS:</p>
+      <p><strong>Opción A — Usar los nameservers de DigitalOcean</strong> (recomendado si usas DO para todo):<br>Ve a <strong>Networking → Domains → Add Domain</strong>. Agrega tu dominio y crea un registro A:</p>
+      <table>
+        <thead><tr><th>Tipo</th><th>Hostname</th><th>Valor</th></tr></thead>
+        <tbody>
+          <tr><td>A</td><td>harmony</td><td>159.x.x.x (tu IP del Droplet)</td></tr>
+        </tbody>
+      </table>
+      <p><strong>Opción B — Desde tu proveedor de dominio actual:</strong><br>Crea un registro A en el panel de tu proveedor (GoDaddy, Namecheap, Cloudflare, etc.) que apunte <code>harmony.tuempresa.com</code> a la IP de tu Droplet.</p>
+      <div class="box info"><span class="box-icon">ℹ</span><div class="box-text">La propagación DNS tarda entre 5 minutos y 2 horas. Puedes verificar con: <code>dig harmony.tuempresa.com +short</code></div></div>
+    </div>
+  </div>
+
+  <h2 id="sistema">Paso 5 — Actualizar el sistema</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">6</div><div class="step-title">Actualizar Ubuntu y crear usuario no-root</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Actualizar paquetes</span>
+<span class="cmd">apt</span> update && apt upgrade -y
+<span class="cmd">apt</span> install -y git curl wget unzip build-essential ufw
+
+<span class="cmt"># Crear usuario no-root para operaciones del sistema</span>
+<span class="cmd">adduser</span> --disabled-password --gecos "" deploy
+<span class="cmd">usermod</span> -aG sudo deploy
+
+<span class="cmt"># Copiar las claves SSH al nuevo usuario</span>
+<span class="cmd">rsync</span> --archive --chown=deploy:deploy ~/.ssh /home/deploy
+
+<span class="cmt"># Configurar UFW (firewall del sistema operativo, capa adicional)</span>
+<span class="cmd">ufw</span> allow OpenSSH
+<span class="cmd">ufw</span> allow 80/tcp
+<span class="cmd">ufw</span> allow 443/tcp
+<span class="cmd">ufw</span> --force enable</code></pre>
+    </div>
+  </div>
+
+  <h2 id="go">Paso 6 — Instalar Go 1.22</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">7</div><div class="step-title">Instalar Go globalmente</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">wget</span> https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
+<span class="cmd">rm</span> -rf /usr/local/go
+<span class="cmd">tar</span> -C /usr/local -xzf go1.22.5.linux-amd64.tar.gz
+<span class="cmd">rm</span> go1.22.5.linux-amd64.tar.gz
+
+<span class="cmt"># PATH global para todos los usuarios</span>
+<span class="cmd">echo</span> 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/go.sh
+<span class="cmd">source</span> /etc/profile.d/go.sh
+
+<span class="cmd">go</span> version
+<span class="cmt"># go version go1.22.5 linux/amd64</span></code></pre>
+    </div>
+  </div>
+
+  <h2 id="node">Paso 7 — Instalar Node.js 20</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">8</div><div class="step-title">Instalar Node.js 20 LTS</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">curl</span> -fsSL https://deb.nodesource.com/setup_20.x | bash -
+<span class="cmd">apt</span> install -y nodejs
+<span class="cmd">node</span> -v && npm -v</code></pre>
+    </div>
+  </div>
+
+  <h2 id="postgres">Paso 8 — Instalar PostgreSQL 16</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">9</div><div class="step-title">Instalar PostgreSQL 16 desde el repositorio oficial</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">apt</span> install -y postgresql-common
+<span class="cmd">/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh</span> -y
+<span class="cmd">apt</span> install -y postgresql-16
+<span class="cmd">systemctl</span> enable --now postgresql</code></pre>
+    </div>
+  </div>
+
+  <h2 id="redis">Paso 9 — Instalar Redis</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">10</div><div class="step-title">Instalar y asegurar Redis</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">apt</span> install -y redis-server
+
+<span class="cmt"># Asegurar Redis: solo escucha en localhost</span>
+<span class="cmd">sed</span> -i 's/^# bind 127.0.0.1/bind 127.0.0.1/' /etc/redis/redis.conf
+<span class="cmd">systemctl</span> enable --now redis-server
+
+<span class="cmd">redis-cli</span> ping
+<span class="cmt"># PONG</span></code></pre>
+    </div>
+  </div>
+
+  <h2 id="nginx">Paso 10 — Instalar Nginx y Certbot</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">11</div><div class="step-title">Instalar Nginx y herramientas SSL</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">apt</span> install -y nginx certbot python3-certbot-nginx
+<span class="cmd">systemctl</span> enable nginx</code></pre>
+    </div>
+  </div>
+
+  <h2 id="postgres-config">Paso 11 — Configurar PostgreSQL</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">12</div><div class="step-title">Crear usuario y base de datos</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">sudo</span> -u postgres psql << 'EOF'
+<span class="key">CREATE</span> USER harmony <span class="key">WITH</span> PASSWORD <span class="str">'MiContraseñaSegura123!'</span>;
+<span class="key">CREATE</span> DATABASE harmony_system <span class="key">OWNER</span> harmony;
+<span class="key">GRANT</span> <span class="key">ALL</span> <span class="key">PRIVILEGES</span> <span class="key">ON</span> DATABASE harmony_system <span class="key">TO</span> harmony;
+<span class="key">ALTER</span> USER harmony CREATEDB;
+\q
+EOF</code></pre>
+      <div class="box warn"><span class="box-icon">⚠</span><div class="box-text">Cambia <code>MiContraseñaSegura123!</code> por una contraseña única y fuerte. Guárdala para usarla en el .env.</div></div>
+    </div>
+  </div>
+
+  <h2 id="usuario">Paso 12 — Estructura de directorios</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">13</div><div class="step-title">Crear usuario del servicio y directorios</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">useradd</span> --system --no-create-home --shell /bin/false harmony
+<span class="cmd">mkdir</span> -p /opt/harmony/bin /opt/harmony/uploads
+<span class="cmd">mkdir</span> -p /var/www/harmony
+<span class="cmd">chown</span> -R harmony:harmony /opt/harmony
+<span class="cmd">chown</span> -R www-data:www-data /var/www/harmony</code></pre>
+    </div>
+  </div>
+
+  <h2 id="codigo">Paso 13 — Subir el código</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">14</div><div class="step-title">Clonar el repositorio</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Opción A: Clonar desde Git (reemplaza la URL)</span>
+<span class="cmd">git</span> clone https://github.com/TU_ORG/harmony-v3.git /opt/harmony/repo
+<span class="cmd">chown</span> -R harmony:harmony /opt/harmony/repo
+
+<span class="cmt"># Opción B: Subir por SCP desde tu máquina local</span>
+<span class="cmt"># (ejecuta en tu terminal LOCAL)</span>
+<span class="cmd">scp</span> -r ./Harmony-v3/ root@159.x.x.x:/opt/harmony/repo</code></pre>
+    </div>
+  </div>
+
+  <h2 id="env">Paso 14 — Variables de entorno</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">15</div><div class="step-title">Crear el archivo .env</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">nano</span> /opt/harmony/.env</code></pre>
+      <pre><code><span class="key">APP_ENV</span>=<span class="val">production</span>
+<span class="key">PORT</span>=<span class="val">8080</span>
+<span class="key">FRONTEND_URL</span>=<span class="val">https://harmony.tuempresa.com</span>
+
+<span class="key">DB_HOST</span>=<span class="val">localhost</span>
+<span class="key">DB_PORT</span>=<span class="val">5432</span>
+<span class="key">DB_USER</span>=<span class="val">harmony</span>
+<span class="key">DB_PASS</span>=<span class="val">MiContraseñaSegura123!</span>
+<span class="key">DB_SSLMODE</span>=<span class="val">disable</span>
+
+<span class="key">JWT_SECRET</span>=<span class="val">&lt;ejecuta: openssl rand -hex 32&gt;</span>
+<span class="key">JWT_EXPIRY_HOURS</span>=<span class="val">24</span>
+
+<span class="key">ANTHROPIC_KEY</span>=<span class="val">sk-ant-api03-...</span>
+
+<span class="key">REDIS_URL</span>=<span class="val">redis://localhost:6379</span>
+<span class="key">UPLOADS_DIR</span>=<span class="val">/opt/harmony/uploads</span></code></pre>
+      <pre><code><span class="cmt"># Generar JWT_SECRET</span>
+<span class="cmd">openssl</span> rand -hex 32
+
+<span class="cmd">chmod</span> 600 /opt/harmony/.env
+<span class="cmd">chown</span> harmony:harmony /opt/harmony/.env</code></pre>
+    </div>
+  </div>
+
+  <h2 id="build-api">Paso 15 — Compilar el API</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">16</div><div class="step-title">Compilar el binario de Go</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">cd</span> /opt/harmony/repo/api
+
+<span class="cmd">go</span> mod download
+
+<span class="cmd">go</span> build -ldflags="-s -w" -o /opt/harmony/bin/harmony-api ./cmd/server/main.go
+
+<span class="cmd">chown</span> harmony:harmony /opt/harmony/bin/harmony-api
+<span class="cmd">chmod</span> 755 /opt/harmony/bin/harmony-api
+
+<span class="cmt"># Verificar</span>
+<span class="cmd">ls</span> -lh /opt/harmony/bin/harmony-api</code></pre>
+    </div>
+  </div>
+
+  <h2 id="build-web">Paso 16 — Compilar el Frontend</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">17</div><div class="step-title">Build del proyecto React</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">cd</span> /opt/harmony/repo/web
+
+<span class="cmd">cat</span> > .env.production << 'EOF'
+VITE_API_URL=https://harmony.tuempresa.com/api
+VITE_WS_URL=wss://harmony.tuempresa.com/ws
+EOF
+
+<span class="cmd">npm</span> ci
+<span class="cmd">npm</span> run build
+
+<span class="cmd">cp</span> -r dist/* /var/www/harmony/
+<span class="cmd">chown</span> -R www-data:www-data /var/www/harmony</code></pre>
+    </div>
+  </div>
+
+  <h2 id="systemd">Paso 17 — Servicio systemd</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">18</div><div class="step-title">Crear e iniciar el servicio systemd</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">nano</span> /etc/systemd/system/harmony-api.service</code></pre>
+      <pre><code><span class="cmt">[Unit]</span>
+<span class="key">Description</span>=<span class="val">Harmony v3 API</span>
+<span class="key">After</span>=<span class="val">network.target postgresql.service redis.service</span>
+<span class="key">Wants</span>=<span class="val">postgresql.service redis.service</span>
+
+<span class="cmt">[Service]</span>
+<span class="key">Type</span>=<span class="val">simple</span>
+<span class="key">User</span>=<span class="val">harmony</span>
+<span class="key">Group</span>=<span class="val">harmony</span>
+<span class="key">WorkingDirectory</span>=<span class="val">/opt/harmony</span>
+<span class="key">EnvironmentFile</span>=<span class="val">/opt/harmony/.env</span>
+<span class="key">ExecStart</span>=<span class="val">/opt/harmony/bin/harmony-api</span>
+<span class="key">Restart</span>=<span class="val">always</span>
+<span class="key">RestartSec</span>=<span class="val">5</span>
+<span class="key">StandardOutput</span>=<span class="val">journal</span>
+<span class="key">StandardError</span>=<span class="val">journal</span>
+<span class="key">NoNewPrivileges</span>=<span class="val">true</span>
+<span class="key">LimitNOFILE</span>=<span class="val">65536</span>
+
+<span class="cmt">[Install]</span>
+<span class="key">WantedBy</span>=<span class="val">multi-user.target</span></code></pre>
+      <pre><code><span class="cmd">systemctl</span> daemon-reload
+<span class="cmd">systemctl</span> enable --now harmony-api
+<span class="cmd">systemctl</span> status harmony-api</code></pre>
+    </div>
+  </div>
+
+  <h2 id="nginx-config">Paso 18 — Configurar Nginx</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">19</div><div class="step-title">Configuración completa de Nginx</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmd">nano</span> /etc/nginx/sites-available/harmony</code></pre>
+      <pre><code><span class="key">server</span> {
+    listen 80;
+    server_name harmony.tuempresa.com;
+    return 301 https://$host$request_uri;
+}
+
+<span class="key">server</span> {
+    listen 443 ssl http2;
+    server_name harmony.tuempresa.com;
+
+    ssl_certificate /etc/letsencrypt/live/harmony.tuempresa.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/harmony.tuempresa.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    root /var/www/harmony;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2|woff)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        client_max_body_size 50M;
+    }
+
+    location /ws {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400s;
+    }
+}</code></pre>
+      <pre><code><span class="cmd">ln</span> -s /etc/nginx/sites-available/harmony /etc/nginx/sites-enabled/
+<span class="cmd">rm</span> -f /etc/nginx/sites-enabled/default
+<span class="cmd">nginx</span> -t</code></pre>
+    </div>
+  </div>
+
+  <h2 id="ssl">Paso 19 — SSL con Let's Encrypt</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">20</div><div class="step-title">Obtener el certificado SSL</div></div>
+    <div class="step-body">
+      <div class="box warn"><span class="box-icon">⚠</span><div class="box-text">Verifica que el DNS ya propagó antes de ejecutar Certbot: <code>dig harmony.tuempresa.com +short</code> debe devolver tu IP.</div></div>
+      <pre><code><span class="cmd">systemctl</span> start nginx
+<span class="cmd">certbot</span> --nginx -d harmony.tuempresa.com
+<span class="cmt"># Sigue las instrucciones: email, aceptar términos (Y), no compartir (N)</span>
+
+<span class="cmt"># Reiniciar Nginx con la nueva configuración SSL</span>
+<span class="cmd">systemctl</span> restart nginx
+
+<span class="cmt"># Verificar renovación automática</span>
+<span class="cmd">certbot</span> renew --dry-run</code></pre>
+    </div>
+  </div>
+
+  <h2 id="verificar">Paso 20 — Verificación final</h2>
+  <div class="step">
+    <div class="step-header"><div class="step-num">21</div><div class="step-title">Comprobar que todo funciona</div></div>
+    <div class="step-body">
+      <pre><code><span class="cmt"># Estado de todos los servicios</span>
+<span class="cmd">systemctl</span> status harmony-api postgresql redis nginx
+
+<span class="cmt"># El API responde</span>
+<span class="cmd">curl</span> https://harmony.tuempresa.com/api/system-config
+<span class="cmt"># {"app_name":"Harmony","favicon_url":""}</span>
+
+<span class="cmt"># Logs del API</span>
+<span class="cmd">journalctl</span> -u harmony-api -f
+
+<span class="cmt"># Logs de Nginx</span>
+<span class="cmd">tail</span> -f /var/log/nginx/error.log</code></pre>
+      <div class="box tip"><span class="box-icon">✓</span><div class="box-text"><strong>¡Listo!</strong> Accede a <code>https://harmony.tuempresa.com</code>. El panel de login debe aparecer correctamente.</div></div>
+    </div>
+  </div>
+
+  <h2>Comandos de mantenimiento</h2>
+  <pre><code><span class="cmt"># Reiniciar el API</span>
+<span class="cmd">systemctl</span> restart harmony-api
+
+<span class="cmt"># Ver logs en tiempo real</span>
+<span class="cmd">journalctl</span> -u harmony-api -f
+
+<span class="cmt"># Uso de recursos del Droplet</span>
+<span class="cmd">htop</span>
+
+<span class="cmt"># Espacio en disco</span>
+<span class="cmd">df</span> -h
+
+<span class="cmt"># Backup de PostgreSQL</span>
+<span class="cmd">sudo</span> -u postgres pg_dumpall > /opt/backups/$(date +%Y%m%d)_all_dbs.sql</code></pre>
+</main>
+</div>
+</body>
