@@ -19,6 +19,8 @@ package handlers
 // probar el flujo Bot → Agente sin necesidad de un proveedor de mensajería real.
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"strconv"
 
@@ -27,6 +29,25 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+func credentialFlags(ch models.Channel) map[string]bool {
+	flags := map[string]bool{}
+	for k, v := range ch.Credentials {
+		if s, ok := v.(string); ok {
+			flags[k] = s != ""
+		} else {
+			flags[k] = v != nil
+		}
+	}
+	flags["webhook_secret"] = ch.WebhookSecret != ""
+	return flags
+}
+
+func generateWebhookSecret() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 // ListChannels retorna todos los canales configurados en el tenant actual.
 //
@@ -43,7 +64,15 @@ func ListChannels(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": channels})
+	type ChannelResp struct {
+		models.Channel
+		CredentialFlags map[string]bool `json:"credential_flags"`
+	}
+	resp := make([]ChannelResp, len(channels))
+	for i, ch := range channels {
+		resp[i] = ChannelResp{Channel: ch, CredentialFlags: credentialFlags(ch)}
+	}
+	c.JSON(http.StatusOK, gin.H{"data": resp})
 }
 
 // CreateChannel crea un nuevo canal de comunicación con las credenciales y metadatos
@@ -53,68 +82,89 @@ func ListChannels(c *gin.Context) {
 // de mensajería (ej. configura un número de WhatsApp Business).
 //
 // Cuerpo JSON:
-//   - name         (requerido): nombre descriptivo del canal (ej. "WhatsApp Soporte").
-//   - type         (requerido): tipo de plataforma ("whatsapp", "messenger", "telegram", etc.).
-//   - description  (opcional): descripción del propósito del canal.
-//   - identifier   (opcional): identificador externo (número de teléfono, page ID, etc.).
-//   - department_id(opcional): ID del departamento al que se enrutan las conversaciones.
-//   - credentials  (opcional): objeto JSON con tokens/secrets del proveedor.
+//   - name           (requerido): nombre descriptivo del canal (ej. "WhatsApp Soporte").
+//   - type           (requerido): tipo de plataforma ("whatsapp", "messenger", "telegram", etc.).
+//   - description    (opcional): descripción del propósito del canal.
+//   - identifier     (opcional): identificador externo (número de teléfono, page ID, etc.).
+//   - department_id  (opcional): ID del departamento al que se enrutan las conversaciones.
+//   - credentials    (opcional): objeto JSON con tokens/secrets del proveedor.
+//   - webhook_secret (opcional): token para validar webhooks entrantes (se genera si no se provee).
 //
 // Respuesta:
-//   - 201 Created con el canal creado en "data".
+//   - 201 Created con el canal creado en "data" y webhook_secret en el cuerpo.
 //   - 422 si faltan campos requeridos o el JSON es inválido.
 //   - 500 si falla la inserción en BD.
 func CreateChannel(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
 	var req struct {
-		Name         string         `json:"name" binding:"required"`
-		Type         string         `json:"type" binding:"required"`
-		Description  string         `json:"description"`
-		Identifier   string         `json:"identifier"`
-		DepartmentID *uint          `json:"department_id"`
-		Credentials  map[string]any `json:"credentials"`
+		Name          string         `json:"name" binding:"required"`
+		Type          string         `json:"type" binding:"required"`
+		Description   string         `json:"description"`
+		Identifier    string         `json:"identifier"`
+		DepartmentID  *uint          `json:"department_id"`
+		Credentials   map[string]any `json:"credentials"`
+		WebhookSecret string         `json:"webhook_secret"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	// Si no se provee webhook_secret, generar uno aleatorio.
+	webhookSecret := req.WebhookSecret
+	if webhookSecret == "" {
+		webhookSecret = generateWebhookSecret()
+	}
 	// Construir el modelo con los valores recibidos.
 	// El canal se marca activo inmediatamente para que empiece a recibir mensajes.
 	ch := models.Channel{
-		Name:         req.Name,
-		Type:         models.ChannelType(req.Type),
-		Description:  req.Description,
-		Identifier:   req.Identifier,
-		DepartmentID: req.DepartmentID,
-		Credentials:  req.Credentials,
-		Status:       models.StatusActive,
-		IsActive:     true,
+		Name:          req.Name,
+		Type:          models.ChannelType(req.Type),
+		Description:   req.Description,
+		Identifier:    req.Identifier,
+		DepartmentID:  req.DepartmentID,
+		Credentials:   req.Credentials,
+		WebhookSecret: webhookSecret,
+		Status:        models.StatusActive,
+		IsActive:      true,
 	}
 	if err := db.Create(&ch).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": ch})
+	// Devolver el canal con webhook_secret y credential_flags (solo una vez en create)
+	type ChannelResp struct {
+		models.Channel
+		WebhookSecret   string          `json:"webhook_secret"`
+		CredentialFlags map[string]bool `json:"credential_flags"`
+	}
+	resp := ChannelResp{
+		Channel:         ch,
+		WebhookSecret:   webhookSecret,
+		CredentialFlags: credentialFlags(ch),
+	}
+	c.JSON(http.StatusCreated, gin.H{"data": resp})
 }
 
 // UpdateChannel actualiza los campos editables de un canal existente (patch parcial).
 // Solo modifica los campos que vienen con valor en el cuerpo de la petición.
 //
 // Cuándo se llama: PUT /channels/:id cuando el administrador edita la configuración
-// de un canal (nombre, estado activo/inactivo, identificador externo, etc.).
+// de un canal (nombre, estado activo/inactivo, identificador externo, credenciales, etc.).
 //
 // Parámetros de ruta:
 //   - id: ID numérico del canal.
 //
 // Cuerpo JSON (todos opcionales):
-//   - name       : nuevo nombre del canal.
-//   - description: nueva descripción.
-//   - identifier : nuevo identificador externo.
-//   - status     : nuevo estado ("active", "inactive", etc.).
-//   - is_active  : booleano para activar/desactivar el canal.
+//   - name           : nuevo nombre del canal.
+//   - description    : nueva descripción.
+//   - identifier     : nuevo identificador externo.
+//   - status         : nuevo estado ("active", "inactive", etc.).
+//   - is_active      : booleano para activar/desactivar el canal.
+//   - credentials    : objeto con credenciales (se mergean, no se sobreescriben).
+//   - webhook_secret : nuevo token webhook.
 //
 // Respuesta:
-//   - 200 OK con el canal actualizado en "data".
+//   - 200 OK con el canal actualizado en "data" y credential_flags.
 //   - 404 si el canal no existe.
 func UpdateChannel(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
@@ -126,11 +176,13 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Identifier  string `json:"identifier"`
-		Status      string `json:"status"`
-		IsActive    *bool  `json:"is_active"` // Puntero para distinguir false de "no enviado".
+		Name          string         `json:"name"`
+		Description   string         `json:"description"`
+		Identifier    string         `json:"identifier"`
+		Status        string         `json:"status"`
+		IsActive      *bool          `json:"is_active"` // Puntero para distinguir false de "no enviado".
+		Credentials   map[string]any `json:"credentials"`
+		WebhookSecret string         `json:"webhook_secret"`
 	}
 	// ShouldBindJSON sin verificar error: en un PATCH, un body vacío es válido.
 	c.ShouldBindJSON(&req)
@@ -152,8 +204,30 @@ func UpdateChannel(c *gin.Context) {
 	if req.IsActive != nil {
 		updates["is_active"] = *req.IsActive
 	}
+	// Credentials: merge (no overwrite) para no perder campos existentes
+	if len(req.Credentials) > 0 {
+		merged := ch.Credentials
+		if merged == nil {
+			merged = map[string]any{}
+		}
+		for k, v := range req.Credentials {
+			merged[k] = v
+		}
+		updates["credentials"] = merged
+	}
+	// WebhookSecret
+	if req.WebhookSecret != "" {
+		updates["webhook_secret"] = req.WebhookSecret
+	}
 	db.Model(&ch).Updates(updates)
-	c.JSON(http.StatusOK, gin.H{"data": ch})
+	// Recargar para obtener valores actualizados
+	db.First(&ch, id)
+	type ChannelResp struct {
+		models.Channel
+		CredentialFlags map[string]bool `json:"credential_flags"`
+	}
+	resp := ChannelResp{Channel: ch, CredentialFlags: credentialFlags(ch)}
+	c.JSON(http.StatusOK, gin.H{"data": resp})
 }
 
 // DeleteChannel elimina un canal de la base de datos (soft-delete si el modelo lo soporta).
