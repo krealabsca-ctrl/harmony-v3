@@ -53,7 +53,12 @@ func CreateCompany(c *gin.Context) {
 	}
 
 	if err := database.SystemDB.Create(&company).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al crear empresa"})
+		// Detectar si es un error de slug duplicado
+		if strings.Contains(err.Error(), "companies_slug_key") {
+			c.JSON(http.StatusConflict, gin.H{"message": "El slug '" + input.Slug + "' ya existe. Por favor usa otro."})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al crear empresa: " + err.Error()})
 		return
 	}
 
