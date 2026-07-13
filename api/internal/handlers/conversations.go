@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"harmony-api/internal/models"
+	"harmony-api/internal/senders"
 	"harmony-api/internal/ws"
 
 	"github.com/gin-gonic/gin"
@@ -353,9 +354,9 @@ func SendMessage(c *gin.Context) {
 		req.Type = "text"
 	}
 
-	// Cargar conversación con canal para validar ventana WhatsApp
+	// Cargar conversación con canal y contacto para validar ventana y enviar mensaje
 	var conv models.Conversation
-	if err := db.Preload("Channel").First(&conv, convID).Error; err != nil {
+	if err := db.Preload("Channel").Preload("Contact").First(&conv, convID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "Conversación no encontrada"})
 		return
 	}
@@ -410,15 +411,63 @@ func SendMessage(c *gin.Context) {
 		return
 	}
 
+	// Intentar enviar el mensaje al proveedor (síncrono)
+	var sendErr error
+	if conv.Channel != nil && conv.Contact != nil {
+		to := conv.Contact.Phone
+		switch conv.Channel.Type {
+		case models.ChannelWhatsApp:
+			var tplPayload *senders.TemplatePayload
+			if req.TemplateID != nil {
+				var tpl Template
+				if db.First(&tpl, *req.TemplateID).Error == nil {
+					tplPayload = &senders.TemplatePayload{Name: tpl.ExternalTemplateID, Language: tpl.Language}
+				}
+			}
+			sendResult, err := senders.SendWhatsApp(conv.Channel, to, req.Body, tplPayload)
+			if err == nil {
+				msg.ExternalID = sendResult.ExternalID
+			}
+			sendErr = err
+
+		case models.ChannelMessenger:
+			sendResult, err := senders.SendMessenger(conv.Channel, to, req.Body)
+			if err == nil {
+				msg.ExternalID = sendResult.ExternalID
+			}
+			sendErr = err
+
+		case models.ChannelInstagram:
+			sendResult, err := senders.SendInstagram(conv.Channel, to, req.Body)
+			if err == nil {
+				msg.ExternalID = sendResult.ExternalID
+			}
+			sendErr = err
+
+		case models.ChannelTelegram:
+			sendResult, err := senders.SendTelegram(conv.Channel, to, req.Body)
+			if err == nil {
+				msg.ExternalID = sendResult.ExternalID
+			}
+			sendErr = err
+		}
+	}
+
+	// Actualizar status y external_id en la BD basado en el resultado de envío
+	if sendErr != nil {
+		db.Model(&msg).Update("status", "failed")
+		msg.Status = "failed"
+	} else if msg.ExternalID != "" {
+		db.Model(&msg).Updates(map[string]any{"status": "sent", "external_id": msg.ExternalID})
+		msg.Status = "sent"
+	}
+
 	// Actualizar last_message_at de la conversación para mantener el orden en el listado
 	// Se usa Exec directo para evitar disparar hooks de GORM innecesariamente
 	db.Exec(`UPDATE conversations SET last_message_at = NOW() WHERE id = ?`, convIDUint)
 
-	// M-28: emitir el mensaje por WebSocket para que otros agentes que tengan abierta la
-	// conversación (o la bandeja) lo vean en tiempo real sin recargar. Canales
-	// namespaceados por empresa (C-01).
-	// NOTA: el envío real al proveedor (Meta/Telegram) se encola aparte; aquí solo se
-	// persiste y difunde el mensaje dentro de Harmony.
+	// Emitir el mensaje por WebSocket para que otros agentes lo vean en tiempo real.
+	// Se emite en ambos casos (éxito y fallo) para que el frontend refleje el estado.
 	companyID := c.GetUint("company_id")
 	ws.GlobalHub.Broadcast(chConversation(companyID, uint(convIDUint)), "MessageReceived", msg)
 	ws.GlobalHub.Broadcast(chInbox(companyID), "MessageReceived", map[string]any{
@@ -426,6 +475,15 @@ func SendMessage(c *gin.Context) {
 		"message":         msg,
 	})
 
+	// Responder al cliente con el mensaje y estado de envío
+	if sendErr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"data":    msg,
+			"message": "El mensaje se guardó pero no pudo entregarse al proveedor.",
+			"error":   sendErr.Error(),
+		})
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{"data": msg})
 }
 
