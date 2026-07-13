@@ -220,7 +220,7 @@ export default function CompaniesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Empresas</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">GestiÃ³n de empresas del sistema</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Gestión de empresas del sistema</p>
         </div>
         <button
           onClick={openCreate}
@@ -263,7 +263,7 @@ export default function CompaniesPage() {
                   Estado
                 </th>
                 <th className="px-5 py-3 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  MÃ³dulos
+                  Módulos
                 </th>
                 <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   Acciones
@@ -601,7 +601,7 @@ function CompanyFormModal({
           {/* Slug */}
           <div>
             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-              Slug (identificador Ãºnico) <span className="text-red-500">*</span>
+              Slug (identificador único) <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
@@ -616,7 +616,7 @@ function CompanyFormModal({
               required
             />
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-              Identificador Ãºnico. Se genera automÃ¡ticamente del nombre.
+              Identificador único. Se genera automáticamente del nombre.
             </p>
           </div>
 
@@ -662,9 +662,9 @@ function CompanyFormModal({
             </div>
           </div>
 
-          {/* MÃ³dulos */}
+          {/* Módulos */}
           <div className="space-y-3">
-            <p className="text-xs font-medium text-gray-700 dark:text-gray-300">MÃ³dulos habilitados</p>
+            <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Módulos habilitados</p>
 
             {/* Omnicanal */}
             <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700">
@@ -690,7 +690,7 @@ function CompanyFormModal({
             <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700">
               <div>
                 <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Publicidad</p>
-                <p className="text-xs text-gray-400 dark:text-gray-500">CampaÃ±as, leads, contenido, calendario</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500">Campañas, leads, contenido, calendario</p>
               </div>
               <button
                 type="button"
