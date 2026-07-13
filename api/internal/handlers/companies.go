@@ -14,7 +14,23 @@ import (
 func ListCompanies(c *gin.Context) {
 	var companies []models.Company
 	database.SystemDB.Order("name").Find(&companies)
-	c.JSON(http.StatusOK, companies)
+	c.JSON(http.StatusOK, gin.H{
+		"data": companies,
+		"links": gin.H{
+			"first": nil,
+			"last":  nil,
+			"prev":  nil,
+			"next":  nil,
+		},
+		"meta": gin.H{
+			"current_page": 1,
+			"from":         1,
+			"last_page":    1,
+			"per_page":     len(companies),
+			"to":           len(companies),
+			"total":        len(companies),
+		},
+	})
 }
 
 // CreateCompany crea una empresa y provisiona su base de datos automáticamente.
