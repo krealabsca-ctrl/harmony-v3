@@ -11,53 +11,29 @@
 --    Solo los admin/supervisores pueden activar este flag desde la UI.
 
 -- ─── Tabla de tarifas WhatsApp por país ──────────────────────────────────────
+-- NOTA: La tabla whatsapp_pricing ya existe en production con un schema específico:
+-- - company_id, channel_id (relaciones a empresa y canal)
+-- - category (enum: utility, marketing, authentication, service)
+-- - price_usd (precio en USD)
+-- Esta migración simplemente asegura la existencia de la tabla y sus índices.
+-- No se reinsertan datos para evitar duplicados.
 
 CREATE TABLE IF NOT EXISTS whatsapp_pricing (
     id             BIGSERIAL PRIMARY KEY,
-    country_code   VARCHAR(10)    NOT NULL UNIQUE,
-    country_name   VARCHAR(100)   NOT NULL,
-    marketing      NUMERIC(10,6)  NOT NULL DEFAULT 0,
-    utility        NUMERIC(10,6)  NOT NULL DEFAULT 0,
-    authentication NUMERIC(10,6)  NOT NULL DEFAULT 0,
-    service        NUMERIC(10,6)  NOT NULL DEFAULT 0,
-    created_at     TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    updated_at     TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+    company_id     BIGINT NOT NULL,
+    channel_id     BIGINT,
+    country_code   VARCHAR(5)     NOT NULL,
+    country_name   VARCHAR(100)   DEFAULT '',
+    category       VARCHAR(100)   NOT NULL,
+    price_usd      NUMERIC(10,6)  DEFAULT 0,
+    effective_from TIMESTAMPTZ    DEFAULT NOW(),
+    created_at     TIMESTAMPTZ    DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ    DEFAULT NOW()
 );
 
--- Datos iniciales: tarifas Meta WhatsApp Business API (USD por conversación, 2025)
-INSERT INTO whatsapp_pricing (country_code, country_name, marketing, utility, authentication, service)
-VALUES
-    ('CR', 'Costa Rica',       0.027400, 0.011000, 0.010800, 0.000000),
-    ('MX', 'México',           0.035600, 0.013500, 0.013200, 0.000000),
-    ('CO', 'Colombia',         0.031700, 0.012000, 0.011800, 0.000000),
-    ('US', 'Estados Unidos',   0.025000, 0.009500, 0.009400, 0.000000),
-    ('BR', 'Brasil',           0.062500, 0.008000, 0.007900, 0.000000),
-    ('AR', 'Argentina',        0.049100, 0.018000, 0.017700, 0.000000),
-    ('CL', 'Chile',            0.037800, 0.014300, 0.014100, 0.000000),
-    ('PE', 'Perú',             0.033900, 0.012900, 0.012600, 0.000000),
-    ('EC', 'Ecuador',          0.031700, 0.012000, 0.011800, 0.000000),
-    ('GT', 'Guatemala',        0.027400, 0.011000, 0.010800, 0.000000),
-    ('HN', 'Honduras',         0.027400, 0.011000, 0.010800, 0.000000),
-    ('SV', 'El Salvador',      0.027400, 0.011000, 0.010800, 0.000000),
-    ('NI', 'Nicaragua',        0.027400, 0.011000, 0.010800, 0.000000),
-    ('PA', 'Panamá',           0.027400, 0.011000, 0.010800, 0.000000),
-    ('DO', 'Rep. Dominicana',  0.027400, 0.011000, 0.010800, 0.000000),
-    ('VE', 'Venezuela',        0.031700, 0.012000, 0.011800, 0.000000),
-    ('BO', 'Bolivia',          0.031700, 0.012000, 0.011800, 0.000000),
-    ('PY', 'Paraguay',         0.031700, 0.012000, 0.011800, 0.000000),
-    ('UY', 'Uruguay',          0.049100, 0.018000, 0.017700, 0.000000),
-    ('ES', 'España',           0.052300, 0.020800, 0.020500, 0.000000),
-    ('IN', 'India',            0.011000, 0.004000, 0.003900, 0.000000),
-    ('GB', 'Reino Unido',      0.043100, 0.018200, 0.017900, 0.000000),
-    ('DE', 'Alemania',         0.113600, 0.055200, 0.054300, 0.000000),
-    ('FR', 'Francia',          0.095400, 0.045200, 0.044500, 0.000000),
-    ('IT', 'Italia',           0.072300, 0.034100, 0.033600, 0.000000),
-    ('CA', 'Canadá',           0.025000, 0.009500, 0.009400, 0.000000),
-    ('AU', 'Australia',        0.060200, 0.025400, 0.025000, 0.000000),
-    ('ZA', 'Sudáfrica',        0.045800, 0.018800, 0.018500, 0.000000),
-    ('NG', 'Nigeria',          0.028900, 0.011500, 0.011300, 0.000000),
-    ('MA', 'Marruecos',        0.019300, 0.007400, 0.007300, 0.000000)
-ON CONFLICT (country_code) DO NOTHING;
+-- Crear índices si no existen
+CREATE INDEX IF NOT EXISTS idx_whatsapp_pricing_company_id ON whatsapp_pricing(company_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_pricing_country ON whatsapp_pricing(country_code);
 
 -- ─── Flag visible_to_agents en plantillas ─────────────────────────────────────
 
