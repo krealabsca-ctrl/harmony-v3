@@ -81,6 +81,8 @@ func CreateCompany(c *gin.Context) {
 	// Provisionar la base de datos de la empresa
 	dbName, err := database.ProvisionCompanyDB(company.ID)
 	if err != nil {
+		// Si falla la provisión, borrar la fila de empresa (hard delete, ya que slug tiene constraint UNIQUE)
+		database.SystemDB.Unscoped().Delete(&company)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al provisionar DB: " + err.Error()})
 		return
 	}
