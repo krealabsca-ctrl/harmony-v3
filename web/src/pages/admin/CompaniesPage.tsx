@@ -16,6 +16,10 @@ interface Company {
   logo_url?: string
   departments_count?: number
   users_count?: number
+  contact_name?: string
+  contact_email?: string
+  contact_phone?: string
+  retention_days?: number
 }
 
 interface PaginatedResponse {
@@ -193,6 +197,10 @@ export default function CompaniesPage() {
       omnichannel_enabled: company.omnichannel_enabled,
       advertising_enabled: company.advertising_enabled,
       is_active: company.is_active,
+      contact_name: company.contact_name ?? '',
+      contact_email: company.contact_email ?? '',
+      contact_phone: company.contact_phone ?? '',
+      retention_days: company.retention_days ?? 0,
     })
     setEditingId(company.id)
   }
