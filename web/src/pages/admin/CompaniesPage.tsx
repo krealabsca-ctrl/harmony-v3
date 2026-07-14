@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Plus, Search, Building2, X } from 'lucide-react'
@@ -60,12 +60,12 @@ function slugify(str: string): string {
   return str
     .toLowerCase()
     .trim()
-    .replace(/[Ã¡Ã Ã¤Ã¢]/g, 'a')
-    .replace(/[Ã©Ã¨Ã«Ãª]/g, 'e')
-    .replace(/[Ã­Ã¬Ã¯Ã®]/g, 'i')
-    .replace(/[Ã³Ã²Ã¶Ã´]/g, 'o')
-    .replace(/[ÃºÃ¹Ã¼Ã»]/g, 'u')
-    .replace(/Ã±/g, 'n')
+    .replace(/[áàäâ]/g, 'a')
+    .replace(/[éèëê]/g, 'e')
+    .replace(/[íìïî]/g, 'i')
+    .replace(/[óòöô]/g, 'o')
+    .replace(/[úùüû]/g, 'u')
+    .replace(/ñ/g, 'n')
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
@@ -146,14 +146,14 @@ export default function CompaniesPage() {
     mutationFn: ({ id, omnichannel_enabled }: { id: number; omnichannel_enabled: boolean }) =>
       api.put(`/admin/companies/${id}`, { omnichannel_enabled }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
-    onError: () => toast.error('Error al cambiar mÃ³dulo Omnicanal.'),
+    onError: () => toast.error('Error al cambiar módulo Omnicanal.'),
   })
 
   const toggleAdvertisingMutation = useMutation({
     mutationFn: ({ id, advertising_enabled }: { id: number; advertising_enabled: boolean }) =>
       api.put(`/admin/companies/${id}`, { advertising_enabled }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
-    onError: () => toast.error('Error al cambiar mÃ³dulo Publicidad.'),
+    onError: () => toast.error('Error al cambiar módulo Publicidad.'),
   })
 
   const toggleActiveMutation = useMutation({
@@ -359,7 +359,7 @@ export default function CompaniesPage() {
                       </button>
                     </td>
 
-                    {/* MÃ³dulos */}
+                    {/* Módulos */}
                     <td className="px-5 py-3">
                       <div className="flex flex-col items-center gap-1">
                         <button
@@ -431,11 +431,11 @@ export default function CompaniesPage() {
           </table>
         </div>
 
-        {/* PaginaciÃ³n */}
+        {/* Paginación */}
         {data && data.meta && data.meta.last_page > 1 && (
           <div className="px-6 py-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Mostrando {data.meta.from ?? 0}â€“{data.meta.to ?? 0} de {data.meta.total} empresas
+              Mostrando {data.meta.from ?? 0}–{data.meta.to ?? 0} de {data.meta.total} empresas
             </p>
             <div className="flex items-center gap-1">
               <button
@@ -473,7 +473,7 @@ export default function CompaniesPage() {
         )}
       </div>
 
-      {/* â”€â”€â”€ Modal: Crear empresa â”€â”€â”€ */}
+      {/* ─── Modal: Crear empresa ─── */}
       {showCreateModal && (
         <CompanyFormModal
           title="Nueva Empresa"
@@ -490,7 +490,7 @@ export default function CompaniesPage() {
         />
       )}
 
-      {/* â”€â”€â”€ Modal: Editar empresa â”€â”€â”€ */}
+      {/* ─── Modal: Editar empresa ─── */}
       {editingId !== null && (
         <CompanyFormModal
           title="Editar Empresa"
@@ -503,13 +503,13 @@ export default function CompaniesPage() {
         />
       )}
 
-      {/* â”€â”€â”€ Modal: Confirmar eliminaciÃ³n â”€â”€â”€ */}
+      {/* ─── Modal: Confirmar eliminación ─── */}
       {deletingId !== null && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full shadow-xl">
-            <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-2">Â¿Eliminar empresa?</h3>
+            <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-2">¿Eliminar empresa?</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
-              Esta acciÃ³n no se puede deshacer. Se eliminarÃ¡n todos los datos de{' '}
+              Esta acción no se puede deshacer. Se eliminarán todos los datos de{' '}
               <span className="font-medium text-gray-800 dark:text-gray-200">{deletingName}</span>.
             </p>
             <div className="flex gap-3">
@@ -534,7 +534,7 @@ export default function CompaniesPage() {
   )
 }
 
-// â”€â”€â”€ Componente compartido para modal crear/editar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Componente compartido para modal crear/editar ──────────────────────────
 
 interface CompanyFormModalProps {
   title: string
@@ -757,4 +757,3 @@ function CompanyFormModal({
     </div>
   )
 }
-
