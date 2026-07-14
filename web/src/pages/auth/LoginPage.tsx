@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/authStore'
 import api from '@/api/client'
 
@@ -12,6 +13,15 @@ export default function LoginPage() {
   const [detectedCompany, setDetectedCompany] = useState('')
   const [detectingCompany, setDetectingCompany] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Cargar config del sistema (logo, nombre)
+  const { data: systemConfig } = useQuery({
+    queryKey: ['system-config'],
+    queryFn: async () => {
+      const res = await api.get('/system-config')
+      return res.data
+    },
+  })
 
   // Detecta la empresa del usuario en tiempo real mientras escribe su email
   useEffect(() => {
@@ -63,20 +73,30 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
           {/* Logo */}
           <div className="flex flex-col items-center mb-8">
-            <div
-              className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 text-white text-2xl font-bold"
-              style={{ backgroundColor: 'var(--color-primary)' }}
-            >
-              H
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900">Bienvenido a Harmony</h1>
+            {systemConfig?.logo_url ? (
+              <img
+                src={systemConfig.logo_url}
+                alt="Logo"
+                className="w-16 h-16 rounded-2xl object-cover mb-4 shadow-sm"
+              />
+            ) : (
+              <div
+                className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 text-white text-2xl font-bold"
+                style={{ backgroundColor: 'var(--color-primary)' }}
+              >
+                H
+              </div>
+            )}
+            <h1 className="text-2xl font-bold text-gray-900">
+              Bienvenido a {systemConfig?.app_name || 'Harmony'}
+            </h1>
           </div>
 
           {/* Card */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
             <h2 className="text-xl font-bold text-gray-900 mb-1 text-center">Iniciar Sesión</h2>
             <p className="text-sm text-gray-500 text-center mb-6">
-              Ingresa tus credenciales para acceder a Harmony
+              Ingresa tus credenciales para acceder a {systemConfig?.app_name || 'Harmony'}
             </p>
 
             {error && (

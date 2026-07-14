@@ -16,11 +16,35 @@ import (
 
 // ServeUpload sirve archivos adjuntos validando que el JWT sea válido y que
 // el archivo pertenezca a la empresa del usuario autenticado.
+// Excepción: uploads/system/* (logo, favicon) son públicos sin autenticación.
 // Reemplaza r.Static("/uploads", "./uploads") que era accesible sin autenticación.
 //
 // Acepta el token via header Authorization: Bearer <token> o query param ?token=
 // para permitir que <img src="/uploads/...?token=..."> funcione en el frontend.
 func ServeUpload(c *gin.Context) {
+	// A-02: el wildcard :filepath de Gin incluye la barra inicial (ej. "/system/...").
+	// Se elimina antes de Clean para que la verificación de prefijo funcione.
+	rawPath := strings.TrimPrefix(c.Param("filepath"), "/")
+	cleanPath := filepath.Clean(rawPath)
+
+	// Prevenir path traversal y rutas absolutas.
+	if cleanPath == "." || strings.HasPrefix(cleanPath, "..") ||
+		strings.Contains(cleanPath, ".."+string(filepath.Separator)) || filepath.IsAbs(cleanPath) {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	// Archivos del sistema (logo, favicon) son públicos sin autenticación.
+	if strings.HasPrefix(cleanPath, "system"+string(filepath.Separator)) {
+		fullPath := filepath.Join("uploads", cleanPath)
+		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		c.File(fullPath)
+		return
+	}
+
 	// M-03/M-09: preferir la cookie httpOnly (enviada automáticamente por el navegador
 	// en <img src>), luego el header Bearer, y solo como último recurso el ?token= en la
 	// URL. Esto permite que el frontend cargue adjuntos sin exponer el JWT en el DOM.
@@ -51,17 +75,6 @@ func ServeUpload(c *gin.Context) {
 		return
 	}
 
-	// A-02: el wildcard :filepath de Gin incluye la barra inicial (ej. "/company_5/..").
-	// Se elimina antes de Clean para que la verificación de prefijo por empresa funcione.
-	rawPath := strings.TrimPrefix(c.Param("filepath"), "/")
-	cleanPath := filepath.Clean(rawPath)
-
-	// Prevenir path traversal y rutas absolutas.
-	if cleanPath == "." || strings.HasPrefix(cleanPath, "..") ||
-		strings.Contains(cleanPath, ".."+string(filepath.Separator)) || filepath.IsAbs(cleanPath) {
-		c.Status(http.StatusBadRequest)
-		return
-	}
 
 	// Verificar que el archivo pertenece a la empresa del token.
 	// Superadmin (company_id == 0) puede acceder a cualquier archivo.

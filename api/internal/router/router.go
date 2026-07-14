@@ -147,6 +147,11 @@ func Setup() *gin.Engine {
 			sa.GET("/admin/system-settings", handlers.GetSystemSettings)
 			sa.PUT("/admin/system-settings", handlers.UpdateSystemSettings)
 			sa.POST("/admin/system-settings/favicon", handlers.UploadSystemFavicon)
+			sa.GET("/admin/system-settings/smtp", handlers.GetSystemSmtp)
+			sa.PUT("/admin/system-settings/smtp", handlers.UpdateSystemSmtp)
+			sa.POST("/admin/system-settings/smtp/test", handlers.TestSystemSmtp)
+			sa.GET("/admin/system-settings/retention-template", handlers.GetRetentionTemplate)
+			sa.PUT("/admin/system-settings/retention-template", handlers.UpdateRetentionTemplate)
 		}
 
 		// ─── Grupo: Rutas de empresa (superadmin excluido) ────────────────────

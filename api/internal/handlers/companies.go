@@ -42,6 +42,10 @@ func CreateCompany(c *gin.Context) {
 		SecondaryColor     string `json:"secondary_color"`
 		OmnichannelEnabled bool   `json:"omnichannel_enabled"`
 		AdvertisingEnabled bool   `json:"advertising_enabled"`
+		ContactName        string `json:"contact_name" binding:"required"`
+		ContactEmail       string `json:"contact_email" binding:"required,email"`
+		ContactPhone       string `json:"contact_phone" binding:"required"`
+		RetentionDays      int    `json:"retention_days"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"errors": err.Error()})
@@ -66,6 +70,10 @@ func CreateCompany(c *gin.Context) {
 		SecondaryColor:     input.SecondaryColor,
 		OmnichannelEnabled: input.OmnichannelEnabled,
 		AdvertisingEnabled: input.AdvertisingEnabled,
+		ContactName:        input.ContactName,
+		ContactEmail:       input.ContactEmail,
+		ContactPhone:       input.ContactPhone,
+		RetentionDays:      input.RetentionDays,
 	}
 
 	if err := database.SystemDB.Create(&company).Error; err != nil {
@@ -102,15 +110,29 @@ func UpdateCompany(c *gin.Context) {
 	}
 	var input map[string]any
 	c.ShouldBindJSON(&input)
+
 	// Campos permitidos
-	allowed := []string{"name", "primary_color", "secondary_color", "is_active", "omnichannel_enabled", "advertising_enabled", "logo_path"}
+	allowed := []string{
+		"name", "primary_color", "secondary_color", "is_active",
+		"omnichannel_enabled", "advertising_enabled", "logo_path",
+		"contact_name", "contact_email", "contact_phone", "retention_days",
+	}
 	updates := make(map[string]any)
 	for _, k := range allowed {
 		if v, ok := input[k]; ok {
 			updates[k] = v
 		}
 	}
+
+	// Si retention_days cambia, resetear retention_warned_at (reinicia el ciclo de aviso)
+	if newRetention, ok := input["retention_days"].(float64); ok {
+		if int(newRetention) != company.RetentionDays {
+			updates["retention_warned_at"] = nil
+		}
+	}
+
 	database.SystemDB.Model(&company).Updates(updates)
+	database.SystemDB.First(&company, c.Param("id"))
 	c.JSON(http.StatusOK, company)
 }
 
