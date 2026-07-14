@@ -26,6 +26,7 @@ import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage'
 import ResetPasswordPage from '@/pages/auth/ResetPasswordPage'
 import CompaniesPage from '@/pages/admin/CompaniesPage'
 import SystemSettingsPage from '@/pages/admin/SystemSettingsPage'
+import SystemEmailPage from '@/pages/admin/SystemEmailPage'
 import UsersPage from '@/pages/admin/UsersPage'
 import DepartmentsPage from '@/pages/admin/DepartmentsPage'
 import TagsPage from '@/pages/admin/TagsPage'
@@ -94,6 +95,7 @@ export default function App() {
         {/* Superadmin */}
         <Route path="admin/companies" element={<RequireRole allowed={['superadmin']}><CompaniesPage /></RequireRole>} />
         <Route path="admin/system-settings" element={<RequireRole allowed={['superadmin']}><SystemSettingsPage /></RequireRole>} />
+        <Route path="admin/system-email" element={<RequireRole allowed={['superadmin']}><SystemEmailPage /></RequireRole>} />
         {/* Admin */}
         <Route path="settings/smtp" element={<RequireRole allowed={['admin']}><SmtpSettingsPage /></RequireRole>} />
         <Route path="settings/branding" element={<RequireRole allowed={['admin']}><BrandingSettingsPage /></RequireRole>} />

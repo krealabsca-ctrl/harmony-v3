@@ -12,6 +12,7 @@ import (
 	"harmony-api/internal/config"
 	"harmony-api/internal/crypto"
 	"harmony-api/internal/database"
+	"harmony-api/internal/jobs"
 	"harmony-api/internal/router"
 	"harmony-api/internal/ws"
 )
@@ -32,6 +33,10 @@ func main() {
 	// Iniciar el hub de WebSockets en goroutine
 	go ws.GlobalHub.Run()
 	log.Println("✓ WebSocket Hub iniciado")
+
+	// Iniciar el job de retención de historial
+	go jobs.Run()
+	log.Println("✓ Job de retención de historial iniciado")
 
 	// Configurar rutas Gin
 	r := router.Setup()

@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useAuthStore } from '@/stores/authStore'
 import api from '@/api/client'
@@ -6,7 +7,7 @@ import {
   MessageSquare, LayoutDashboard, Users, Building2, Megaphone,
   FileText, Settings, BarChart3, Monitor, GitBranch, Bot,
   Tag, DollarSign, Radio, LogOut, BookOpen, MessageCircle, History,
-  PieChart, Pencil, Calendar, Flag, Hash
+  PieChart, Pencil, Calendar, Flag, Hash, Mail
 } from 'lucide-react'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -19,6 +20,13 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user, isSuperAdmin, isAdmin, isSupervisor, isMercadeo, canAccessAdvertising } = useAuth()
   const navigate = useNavigate()
+  const [systemConfig, setSystemConfig] = useState<{ logo_url?: string; app_name?: string } | null>(null)
+
+  useEffect(() => {
+    api.get('/system-config').then(res => {
+      setSystemConfig(res.data)
+    }).catch(() => {})
+  }, [])
 
   const handleLogout = async () => {
     await api.post('/auth/logout').catch(() => {})
@@ -46,10 +54,20 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
       >
         {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/20">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/20 flex-shrink-0">
-          <Hash className="w-5 h-5 text-white" strokeWidth={2.5} />
-        </div>
-        <span className="font-bold text-lg text-white truncate">Harmony</span>
+        {systemConfig?.logo_url ? (
+          <img
+            src={systemConfig.logo_url}
+            alt="Logo"
+            className="w-9 h-9 rounded-xl object-cover flex-shrink-0"
+          />
+        ) : (
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/20 flex-shrink-0">
+            <Hash className="w-5 h-5 text-white" strokeWidth={2.5} />
+          </div>
+        )}
+        <span className="font-bold text-lg text-white truncate">
+          {systemConfig?.app_name || 'Harmony'}
+        </span>
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1" onClick={onClose}>
@@ -67,6 +85,9 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
               <p className="px-3 text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Sistema</p>
               <NavLink to="/admin/system-settings" className={linkClass}>
                 <Settings className="w-5 h-5" /><span>Configuración del Sistema</span>
+              </NavLink>
+              <NavLink to="/admin/system-email" className={linkClass}>
+                <Mail className="w-5 h-5" /><span>Correo del Sistema</span>
               </NavLink>
             </div>
           </>

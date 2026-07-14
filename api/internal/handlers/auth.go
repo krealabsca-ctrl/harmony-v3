@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"harmony-api/internal/database"
 	"harmony-api/internal/middleware"
 	"harmony-api/internal/models"
+	"harmony-api/internal/services"
 	"harmony-api/internal/ws"
 
 	"github.com/gin-gonic/gin"
@@ -339,13 +341,33 @@ func ForgotPassword(c *gin.Context) {
 }
 
 // sendPasswordResetEmail entrega el enlace de recuperación por correo.
-// TODO: integrar el SMTP configurado por empresa (settings). Mientras tanto NO se
-// registra el token en ningún log (M-04); devolver error hace que el WARN omita el token.
+// M-04: NUNCA loguear la URL/token (cualquiera con acceso a logs tomaría la cuenta).
+// Se envía por SMTP; si falla, se registra solo el user_id, sin el token.
 func sendPasswordResetEmail(email, resetURL string) error {
-	_ = email
-	_ = resetURL
-	// Placeholder: la integración SMTP real se conecta aquí.
-	return nil
+	subject := "Recupera tu contraseña — Harmony"
+	htmlBody := fmt.Sprintf(`
+	<html>
+	<body style="font-family: Arial, sans-serif; background-color: #f5f5f5;">
+		<div style="max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px;">
+			<h2 style="color: #333;">Recupera tu contraseña</h2>
+			<p style="color: #666;">Recibiste esta solicitud para restablecer tu contraseña en Harmony.</p>
+			<p style="margin: 20px 0;">
+				<a href="%s" style="display: inline-block; padding: 12px 24px; background-color: #6366f1; color: white; text-decoration: none; border-radius: 6px;">
+					Restablecer contraseña
+				</a>
+			</p>
+			<p style="color: #999; font-size: 12px;">
+				Este enlace expira en 1 hora. Si no solicitaste recuperar tu contraseña, ignora este correo.
+			</p>
+			<p style="color: #999; font-size: 12px; margin-top: 20px;">
+				Harmony — Sistema de Gestión Omnicanal
+			</p>
+		</div>
+	</body>
+	</html>
+	`, resetURL)
+
+	return services.Send(email, subject, htmlBody)
 }
 
 // ResetPassword valida el token y actualiza la contraseña del usuario.
