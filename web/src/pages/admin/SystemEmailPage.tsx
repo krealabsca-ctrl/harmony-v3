@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Mail, Send } from 'lucide-react'
@@ -45,9 +45,6 @@ export default function SystemEmailPage() {
       const res = await api.get('/admin/system-settings/smtp')
       return res.data?.data || {}
     },
-    onSuccess: (data) => {
-      setSmtpForm(data as SmtpConfig)
-    },
   })
 
   // Obtener plantilla de retención
@@ -57,10 +54,21 @@ export default function SystemEmailPage() {
       const res = await api.get('/admin/system-settings/retention-template')
       return res.data?.data || {}
     },
-    onSuccess: (data) => {
-      setTemplateForm(data as RetentionTemplate)
-    },
   })
+
+  // Cargar SMTP cuando se obtiene
+  useEffect(() => {
+    if (smtpData) {
+      setSmtpForm(smtpData as SmtpConfig)
+    }
+  }, [smtpData])
+
+  // Cargar plantilla cuando se obtiene
+  useEffect(() => {
+    if (templateData) {
+      setTemplateForm(templateData as RetentionTemplate)
+    }
+  }, [templateData])
 
   // Guardar SMTP
   const saveSMTPMutation = useMutation({
