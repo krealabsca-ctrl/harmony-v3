@@ -111,3 +111,15 @@ func UpdateCompany(c *gin.Context) {
 	database.SystemDB.Model(&company).Updates(updates)
 	c.JSON(http.StatusOK, company)
 }
+
+// DeleteCompany elimina una empresa y sus datos asociados (soft-delete)
+func DeleteCompany(c *gin.Context) {
+	var company models.Company
+	id := c.Param("id")
+	if err := database.SystemDB.First(&company, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Empresa no encontrada"})
+		return
+	}
+	database.SystemDB.Delete(&company)
+	c.JSON(http.StatusNoContent, nil)
+}

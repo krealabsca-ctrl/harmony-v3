@@ -143,6 +143,7 @@ func Setup() *gin.Engine {
 			sa.GET("/admin/companies", handlers.ListCompanies)
 			sa.POST("/admin/companies", handlers.CreateCompany)
 			sa.PUT("/admin/companies/:id", handlers.UpdateCompany)
+			sa.DELETE("/admin/companies/:id", handlers.DeleteCompany)
 			sa.GET("/admin/system-settings", handlers.GetSystemSettings)
 			sa.PUT("/admin/system-settings", handlers.UpdateSystemSettings)
 			sa.POST("/admin/system-settings/favicon", handlers.UploadSystemFavicon)

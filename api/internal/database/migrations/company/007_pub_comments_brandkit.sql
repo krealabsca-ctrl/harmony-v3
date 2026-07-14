@@ -15,6 +15,12 @@ CREATE TABLE IF NOT EXISTS pub_comments (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Agregar columna status si no existe (para migraciones desde versiones anteriores)
+ALTER TABLE IF EXISTS pub_comments
+    ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending';
+
+-- Crear índices
 CREATE INDEX IF NOT EXISTS idx_pub_comments_company_id ON pub_comments(company_id);
 CREATE INDEX IF NOT EXISTS idx_pub_comments_status ON pub_comments(company_id, status);
 
