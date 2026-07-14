@@ -627,13 +627,14 @@ function CompanyFormModal({
                 Color Primario
               </label>
               <div className="flex gap-2 items-center">
-                <input
-                  type="color"
-                  value={form.primary_color}
-                  onChange={(e) => setForm((f) => ({ ...f, primary_color: e.target.value }))}
-                  className="w-12 h-12 rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer flex-shrink-0"
-                  style={{ appearance: 'none', WebkitAppearance: 'none' }}
-                />
+                <div className="w-12 h-12 rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden flex-shrink-0">
+                  <input
+                    type="color"
+                    value={form.primary_color}
+                    onChange={(e) => setForm((f) => ({ ...f, primary_color: e.target.value }))}
+                    className="w-full h-full cursor-pointer"
+                  />
+                </div>
                 <input
                   type="text"
                   value={form.primary_color}
@@ -647,13 +648,14 @@ function CompanyFormModal({
                 Color Secundario
               </label>
               <div className="flex gap-2 items-center">
-                <input
-                  type="color"
-                  value={form.secondary_color}
-                  onChange={(e) => setForm((f) => ({ ...f, secondary_color: e.target.value }))}
-                  className="w-12 h-12 rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer flex-shrink-0"
-                  style={{ appearance: 'none', WebkitAppearance: 'none' }}
-                />
+                <div className="w-12 h-12 rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden flex-shrink-0">
+                  <input
+                    type="color"
+                    value={form.secondary_color}
+                    onChange={(e) => setForm((f) => ({ ...f, secondary_color: e.target.value }))}
+                    className="w-full h-full cursor-pointer"
+                  />
+                </div>
                 <input
                   type="text"
                   value={form.secondary_color}

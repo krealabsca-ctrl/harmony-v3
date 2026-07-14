@@ -1,4 +1,4 @@
--- Migración 008: Alinear bot_configs con el modelo de Harmony v2
+-- Migración 007: Alinear bot_configs con el modelo de Harmony v2
 -- Agrega los campos que usa la UI v2 y renombra system_prompt → instructions.
 
 ALTER TABLE bot_configs
