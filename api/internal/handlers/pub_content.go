@@ -74,7 +74,7 @@ func runPubGeneration(db *gorm.DB, settings *PubSettingsFull, agent *PubAgent, t
 
 // ─── Modelos extendidos ───────────────────────────────────────────────────────
 
-// PubPostFull extiende PubPost con los campos añadidos en la migración 012.
+// PubPostFull extiende PubPost con los campos añadidos en la migración 011.
 type PubPostFull struct {
 	ID              uint            `gorm:"primarykey" json:"id"`
 	CompanyID       uint            `json:"company_id"`
@@ -97,7 +97,7 @@ type PubPostFull struct {
 
 func (PubPostFull) TableName() string { return "pub_posts" }
 
-// PubSettingsFull extiende PubSettings con los campos añadidos en las migraciones 012 y 013.
+// PubSettingsFull extiende PubSettings con los campos añadidos en las migraciones 011 y 012.
 type PubSettingsFull struct {
 	ID                   uint            `gorm:"primarykey" json:"id"`
 	CompanyID            uint            `json:"company_id"`

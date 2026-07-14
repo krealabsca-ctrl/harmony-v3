@@ -1,4 +1,4 @@
--- Migración 011: Reemplazar pub_brand_kit por esquema v2 e incluir pub_documents
+-- Migración 010: Reemplazar pub_brand_kit por esquema v2 e incluir pub_documents
 
 -- Eliminar tabla anterior (no tiene datos productivos relevantes)
 DROP TABLE IF EXISTS pub_brand_kit;

@@ -1,4 +1,4 @@
--- Migración 009: Alinear pub_agents con el esquema de Harmony v2
+-- Migración 008: Alinear pub_agents con el esquema de Harmony v2
 -- Idempotent approach: verifica existencia antes de rename, agrega todas las columnas con IF NOT EXISTS
 -- Tipos: content, lead, reply (antes: generator, reviewer, strategist)
 -- Campos: model (antes: ai_model), enabled (antes: is_active), + platforms JSONB, + config JSONB

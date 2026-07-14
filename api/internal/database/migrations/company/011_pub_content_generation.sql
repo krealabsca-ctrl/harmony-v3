@@ -1,4 +1,4 @@
--- Migración 012: Campos para generación IA + aprobación iterativa por WhatsApp
+-- Migración 011: Campos para generación IA + aprobación iterativa por WhatsApp
 
 DO $$
 BEGIN
@@ -6,6 +6,11 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                    WHERE table_name='pub_posts' AND column_name='image_url') THEN
         ALTER TABLE pub_posts ADD COLUMN image_url TEXT DEFAULT '';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name='pub_posts' AND column_name='thumbnail_url') THEN
+        ALTER TABLE pub_posts ADD COLUMN thumbnail_url TEXT DEFAULT '';
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns

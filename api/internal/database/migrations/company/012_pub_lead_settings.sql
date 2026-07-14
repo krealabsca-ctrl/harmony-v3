@@ -1,4 +1,4 @@
--- Migración 013: Campos de detección de leads en pub_settings (paridad con v2)
+-- Migración 012: Campos de detección de leads en pub_settings (paridad con v2)
 
 DO $$
 BEGIN

@@ -1,4 +1,4 @@
--- Migración 010: Alinear pub_campaigns con el esquema del frontend v2
+-- Migración 009: Alinear pub_campaigns con el esquema del frontend v2
 -- budget_amount → budget, spent_amount → spent
 -- objective → type
 -- platform (string) → platforms (JSONB array)

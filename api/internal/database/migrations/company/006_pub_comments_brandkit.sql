@@ -1,4 +1,4 @@
--- Comentarios de redes sociales (módulo pub)
+-- Migración 006: Comentarios de redes sociales (módulo pub) + brand_kit v1
 -- Nota: 001_create_core_tables.sql crea pub_comments con schema antiguo (resource_type, resource_id, user_id, body)
 -- Esta migración la actualiza al schema nuevo de redes sociales
 CREATE TABLE IF NOT EXISTS pub_comments (
