@@ -27,6 +27,11 @@ type Company struct {
 	CreatedAt          time.Time       `json:"created_at"`
 	UpdatedAt          time.Time       `json:"updated_at"`
 	DeletedAt          gorm.DeletedAt  `gorm:"index" json:"-"`
+
+	// Conteos calculados (no persistidos): se llenan en ListCompanies consultando la
+	// base de datos de cada empresa. gorm:"-" evita que GORM intente mapearlos a columnas.
+	DepartmentsCount int `gorm:"-" json:"departments_count"`
+	UsersCount       int `gorm:"-" json:"users_count"`
 }
 
 // SystemSetting vive en harmony_system para configuración global (SMTP, branding, Azure, etc.)
