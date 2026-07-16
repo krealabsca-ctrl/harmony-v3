@@ -292,7 +292,7 @@ export default function PubBrandKitPage() {
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
                 Información de contacto
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {([
                   { key: 'contactPhone'   as const, label: 'Teléfono',   type: 'text',  placeholder: '+506 0000-0000' },
                   { key: 'contactEmail'   as const, label: 'Correo',     type: 'email', placeholder: 'info@empresa.com' },

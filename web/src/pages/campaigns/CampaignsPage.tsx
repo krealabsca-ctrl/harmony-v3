@@ -870,7 +870,7 @@ export default function CampaignsPage() {
                   >
                     {step > s.n ? '✓' : s.n}
                   </span>
-                  {s.label}
+                  <span className="hidden sm:inline">{s.label}</span>
                 </div>
               ))}
             </div>
@@ -1231,7 +1231,7 @@ export default function CampaignsPage() {
             {detailData ? (
               <>
                 {/* Tarjetas de estadísticas: total / enviados / fallidos / costo total */}
-                <div className="grid grid-cols-4 divide-x divide-gray-100 dark:divide-gray-700 border-b border-gray-100 dark:border-gray-700">
+                <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-gray-100 dark:divide-gray-700 border-b border-gray-100 dark:border-gray-700">
                   {[
                     { label: 'Total',       value: detailData.data.campaign.total_recipients.toLocaleString() },
                     { label: 'Enviados',    value: detailData.data.campaign.sent_count.toLocaleString() },
