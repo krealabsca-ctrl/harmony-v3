@@ -153,6 +153,10 @@ func Setup() *gin.Engine {
 			sa.POST("/admin/system-settings/smtp/test", handlers.TestSystemSmtp)
 			sa.GET("/admin/system-settings/retention-template", handlers.GetRetentionTemplate)
 			sa.PUT("/admin/system-settings/retention-template", handlers.UpdateRetentionTemplate)
+			// Branding global (apariencia/colores) — movido del admin de empresa al
+			// superadmin: escribe la clave global "branding" que aplica a toda la plataforma.
+			sa.GET("/settings/branding", handlers.GetBrandingSettings)
+			sa.PUT("/settings/branding", handlers.UpdateBrandingSettings)
 		}
 
 		// ─── Grupo: Rutas de empresa (superadmin excluido) ────────────────────
@@ -273,11 +277,9 @@ func Setup() *gin.Engine {
 				adm.POST("/bot/documents", handlers.UploadBotDocument)
 				adm.DELETE("/bot/documents/:id", handlers.DeleteBotDocument)
 
-				// Configuraciones de empresa (admin)
-				adm.GET("/settings/smtp", handlers.GetSmtpSettings)
-				adm.PUT("/settings/smtp", handlers.UpdateSmtpSettings)
-				adm.GET("/settings/branding", handlers.GetBrandingSettings)
-				adm.PUT("/settings/branding", handlers.UpdateBrandingSettings)
+				// SMTP y Branding se gestionan solo desde el superadmin (config global de
+				// la plataforma). Ver grupo `sa` más arriba. Aquí el admin de empresa solo
+				// conserva la configuración de retención de historial.
 				// Configuración de retención de historial (cuánto tiempo se guardan conversaciones)
 				adm.GET("/settings/history", handlers.GetHistorySettings)
 				adm.PUT("/settings/history", handlers.UpdateHistorySettings)

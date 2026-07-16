@@ -7,7 +7,7 @@ import {
   MessageSquare, LayoutDashboard, Users, Building2, Megaphone,
   FileText, Settings, BarChart3, Monitor, GitBranch, Bot,
   Tag, DollarSign, Radio, LogOut, BookOpen, MessageCircle, History,
-  PieChart, Pencil, Calendar, Flag, Hash, Mail
+  PieChart, Pencil, Calendar, Flag, Hash, Mail, Palette
 } from 'lucide-react'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -88,6 +88,9 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
               </NavLink>
               <NavLink to="/admin/system-email" className={linkClass}>
                 <Mail className="w-5 h-5" /><span>Correo del Sistema</span>
+              </NavLink>
+              <NavLink to="/settings/branding" className={linkClass}>
+                <Palette className="w-5 h-5" /><span>Apariencia</span>
               </NavLink>
             </div>
           </>
