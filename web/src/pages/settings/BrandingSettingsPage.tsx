@@ -1,13 +1,12 @@
-﻿import { useState, useRef, useCallback } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useState, useEffect, useCallback } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  Upload, Save, Loader2, Palette, Image as ImageIcon, Monitor,
+  Save, Loader2, Palette, Monitor,
   MessageSquare, LayoutDashboard, FileText, Settings,
   BarChart3, Users, Megaphone, LogOut, Radio,
 } from 'lucide-react'
 import api from '@/api/client'
-import { useAuth } from '@/hooks/useAuth'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,7 +14,6 @@ interface BrandingSettings {
   system_name: string
   primary_color: string
   secondary_color: string
-  logo_url: string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -35,10 +33,9 @@ interface SidebarPreviewProps {
   systemName: string
   primaryColor: string
   secondaryColor: string
-  logoPreview: string | null
 }
 
-function SidebarPreview({ systemName, primaryColor, secondaryColor, logoPreview }: SidebarPreviewProps) {
+function SidebarPreview({ systemName, primaryColor, secondaryColor }: SidebarPreviewProps) {
   const primary = isValidHex(primaryColor) ? primaryColor : '#4F46E5'
   const secondary = isValidHex(secondaryColor) ? secondaryColor : '#7C3AED'
 
@@ -60,20 +57,12 @@ function SidebarPreview({ systemName, primaryColor, secondaryColor, logoPreview 
         <div className="flex flex-col bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 w-full">
           {/* Logo */}
           <div className="h-11 flex items-center px-3 border-b border-gray-100 dark:border-gray-700 gap-2 flex-shrink-0">
-            {logoPreview ? (
-              <img
-                src={logoPreview}
-                alt="Logo"
-                className="h-6 w-6 rounded-md object-contain flex-shrink-0"
-              />
-            ) : (
-              <div
-                className="h-6 w-6 rounded-md flex items-center justify-center text-white font-bold text-[10px] flex-shrink-0"
-                style={{ backgroundColor: primary }}
-              >
-                {(systemName || 'H').charAt(0).toUpperCase()}
-              </div>
-            )}
+            <div
+              className="h-6 w-6 rounded-md flex items-center justify-center text-white font-bold text-[10px] flex-shrink-0"
+              style={{ backgroundColor: primary }}
+            >
+              {(systemName || 'H').charAt(0).toUpperCase()}
+            </div>
             <span className="font-semibold text-gray-900 dark:text-gray-100 text-[11px] truncate">
               {systemName || 'Harmony'}
             </span>
@@ -139,7 +128,7 @@ function ColorField({ label, hint, colorValue, hexInput, onPickerChange, onHexCh
 
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-500 mb-1.5">{label}</label>
+      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">{label}</label>
       <div className="flex items-center gap-2">
         {/* Swatch / color picker */}
         <div className="relative flex-shrink-0">
@@ -177,79 +166,59 @@ function ColorField({ label, hint, colorValue, hexInput, onPickerChange, onHexCh
 // ─── BrandingSettingsPage ─────────────────────────────────────────────────────
 
 export default function BrandingSettingsPage() {
-  const { isSuperAdmin } = useAuth()
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const faviconInputRef = useRef<HTMLInputElement>(null)
+  const queryClient = useQueryClient()
 
   const [form, setForm] = useState<BrandingSettings>({
     system_name: '',
     primary_color: '#4F46E5',
     secondary_color: '#7C3AED',
-    logo_url: null,
   })
 
   // Separate raw hex inputs so user can type freely without snapping
   const [primaryHex, setPrimaryHex] = useState('#4F46E5')
   const [secondaryHex, setSecondaryHex] = useState('#7C3AED')
 
-  const [logoFile, setLogoFile] = useState<File | null>(null)
-  const [logoPreview, setLogoPreview] = useState<string | null>(null)
-  const [initialLogoUrl, setInitialLogoUrl] = useState<string | null>(null)
-
-  const [faviconFile, setFaviconFile] = useState<File | null>(null)
-  const [faviconPreview, setFaviconPreview] = useState<string | null>(null)
-
   // ── Fetch ─────────────────────────────────────────────────────────────────
 
-  const { isLoading } = useQuery<BrandingSettings>({
+  const { data, isLoading } = useQuery<BrandingSettings>({
     queryKey: ['branding'],
     queryFn: async () => {
       const { data } = await api.get('/settings/branding')
-      return data
+      return data?.data ?? data
     },
-    onSuccess: (data: BrandingSettings) => {
-      const p = data.primary_color ?? '#4F46E5'
-      const s = data.secondary_color ?? '#7C3AED'
-      setForm({
-        system_name: data.system_name ?? '',
-        primary_color: p,
-        secondary_color: s,
-        logo_url: data.logo_url ?? null,
-      })
-      setPrimaryHex(p)
-      setSecondaryHex(s)
-      setInitialLogoUrl(data.logo_url ?? null)
-      if (data.logo_url) setLogoPreview(data.logo_url)
-    },
-  } as any)
+  })
+
+  // React Query v5 no soporta onSuccess en useQuery: cargamos el form con useEffect.
+  useEffect(() => {
+    if (!data) return
+    const p = data.primary_color ?? '#4F46E5'
+    const s = data.secondary_color ?? '#7C3AED'
+    setForm({
+      system_name: data.system_name ?? '',
+      primary_color: p,
+      secondary_color: s,
+    })
+    setPrimaryHex(p)
+    setSecondaryHex(s)
+  }, [data])
 
   // ── Save ──────────────────────────────────────────────────────────────────
 
   const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (logoFile || faviconFile) {
-        const fd = new FormData()
-        fd.append('system_name', form.system_name)
-        fd.append('primary_color', form.primary_color)
-        fd.append('secondary_color', form.secondary_color)
-        if (logoFile) fd.append('logo', logoFile)
-        if (faviconFile) fd.append('favicon', faviconFile)
-        return api.put('/settings/branding', fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        })
-      }
-      return api.put('/settings/branding', {
+    mutationFn: async () =>
+      api.put('/settings/branding', {
         system_name: form.system_name,
         primary_color: form.primary_color,
         secondary_color: form.secondary_color,
-      })
-    },
+      }),
     onSuccess: () => {
       applyColorsToDocument(form.primary_color, form.secondary_color)
-      toast.success('Branding guardado y aplicado correctamente')
+      queryClient.invalidateQueries({ queryKey: ['branding'] })
+      queryClient.invalidateQueries({ queryKey: ['system-config'] })
+      toast.success('Apariencia guardada y aplicada correctamente')
     },
     onError: () => {
-      toast.error('Error al guardar la configuración de branding')
+      toast.error('Error al guardar la configuración de apariencia')
     },
   })
 
@@ -281,44 +250,6 @@ export default function BrandingSettingsPage() {
     }
   }, [])
 
-  // ── Logo handlers ─────────────────────────────────────────────────────────
-
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      toast.error('Por favor selecciona un archivo de imagen válido')
-      return
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('La imagen no debe superar los 2 MB')
-      return
-    }
-    setLogoFile(file)
-    const reader = new FileReader()
-    reader.onload = ev => setLogoPreview(ev.target?.result as string)
-    reader.readAsDataURL(file)
-  }
-
-  const handleRemoveLogo = () => {
-    setLogoFile(null)
-    setLogoPreview(initialLogoUrl)
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }
-
-  const handleFaviconChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.size > 512 * 1024) {
-      toast.error('El favicon no debe superar los 512 KB')
-      return
-    }
-    setFaviconFile(file)
-    const reader = new FileReader()
-    reader.onload = ev => setFaviconPreview(ev.target?.result as string)
-    reader.readAsDataURL(file)
-  }
-
   // ── Submit ────────────────────────────────────────────────────────────────
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -349,145 +280,19 @@ export default function BrandingSettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-6xl mx-auto p-6 space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Branding</h1>
-        <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500 text-sm mt-1">
-          Personaliza la apariencia visual global del sistema para todos los usuarios.
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Apariencia</h1>
+        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
+          Nombre y paleta de colores del sistema. El logo y el favicon se configuran en{' '}
+          <span className="font-medium">Configuración del Sistema</span>.
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* ── Left: settings (2 cols) ── */}
         <div className="lg:col-span-2 space-y-5">
-
-          {/* Logo card */}
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center gap-3">
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: 'var(--color-primary)' }}
-              >
-                <ImageIcon className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Logotipo</h2>
-                <p className="text-xs text-gray-400 dark:text-gray-500">PNG, SVG, WEBP · máx. 2 MB · fondo transparente recomendado</p>
-              </div>
-            </div>
-
-            <div className="px-6 py-5">
-              <div className="flex items-start gap-5">
-                {/* Preview box */}
-                <div className="h-20 w-20 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {logoPreview ? (
-                    <img src={logoPreview} alt="Logo preview" className="h-full w-full object-contain p-1" />
-                  ) : (
-                    <ImageIcon className="w-8 h-8 text-gray-300" />
-                  )}
-                </div>
-
-                {/* Controls */}
-                <div className="flex-1">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleLogoChange}
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 transition-colors"
-                    >
-                      <Upload className="w-4 h-4" />
-                      {logoPreview ? 'Cambiar logo' : 'Subir logo'}
-                    </button>
-                    {logoPreview && (
-                      <button
-                        type="button"
-                        onClick={handleRemoveLogo}
-                        className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 transition-colors"
-                      >
-                        Quitar
-                      </button>
-                    )}
-                  </div>
-                  {logoFile ? (
-                    <p className="text-xs text-green-600 mt-2 font-medium">
-                      Archivo listo: {logoFile.name} ({(logoFile.size / 1024).toFixed(0)} KB)
-                    </p>
-                  ) : (
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                      Se muestra en la barra lateral junto al nombre del sistema.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Favicon card — superAdmin only */}
-          {isSuperAdmin && (
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center gap-3">
-                <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: 'var(--color-primary)' }}
-                >
-                  <ImageIcon className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Favicon</h2>
-                  <p className="text-xs text-gray-400 dark:text-gray-500">Icono que aparece en la pestana del navegador</p>
-                </div>
-              </div>
-
-              <div className="px-6 py-5 space-y-3">
-                {/* Hidden file input */}
-                <input
-                  ref={faviconInputRef}
-                  type="file"
-                  accept="image/*,.ico"
-                  className="hidden"
-                  onChange={handleFaviconChange}
-                />
-
-                <div className="flex items-center gap-4">
-                  {/* Preview */}
-                  <div className="flex-shrink-0 w-10 h-10 border border-gray-200 dark:border-gray-600 rounded flex items-center justify-center bg-gray-50 dark:bg-gray-900 overflow-hidden">
-                    {faviconPreview ? (
-                      <img src={faviconPreview} alt="Favicon preview" className="w-8 h-8 object-contain" />
-                    ) : (
-                      <span className="text-xs text-gray-300">ico</span>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => faviconInputRef.current?.click()}
-                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 transition-colors"
-                  >
-                    <Upload className="w-4 h-4" />
-                    {faviconFile ? 'Cambiar favicon' : 'Subir favicon'}
-                  </button>
-
-                  {faviconFile && (
-                    <p className="text-xs text-green-600 font-medium">
-                      {faviconFile.name} ({(faviconFile.size / 1024).toFixed(0)} KB)
-                    </p>
-                  )}
-                </div>
-
-                <p className="text-xs text-gray-400 dark:text-gray-500">
-                  32x32 px recomendado. Formatos: .ico, .png, .svg
-                </p>
-              </div>
-            </div>
-          )}
 
           {/* System name + colors card */}
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
@@ -507,7 +312,7 @@ export default function BrandingSettingsPage() {
             <div className="px-6 py-5 space-y-5">
               {/* System name */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-500 mb-1.5">
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
                   Nombre del sistema
                 </label>
                 <input
@@ -586,7 +391,6 @@ export default function BrandingSettingsPage() {
                 systemName={form.system_name}
                 primaryColor={form.primary_color}
                 secondaryColor={form.secondary_color}
-                logoPreview={logoPreview}
               />
             </div>
 
@@ -616,11 +420,12 @@ export default function BrandingSettingsPage() {
           </div>
 
           {/* Info tip */}
-          <div className="bg-blue-50 rounded-2xl border border-blue-100 p-4">
-            <p className="text-xs font-semibold text-blue-700 mb-1">Aplicación inmediata</p>
-            <p className="text-xs text-blue-600 leading-relaxed">
-              Al guardar, los colores se aplican al instante en toda la aplicación
-              mediante variables CSS globales (<code className="font-mono">--color-primary</code>).
+          <div className="bg-blue-50 dark:bg-blue-950/30 rounded-2xl border border-blue-100 dark:border-blue-900 p-4">
+            <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">Aplicación de colores</p>
+            <p className="text-xs text-blue-600 dark:text-blue-300 leading-relaxed">
+              Al guardar, los colores se aplican de inmediato en esta sesión mediante variables
+              CSS globales (<code className="font-mono">--color-primary</code>). Cada empresa puede
+              además definir su propia paleta desde Gestión de Empresas.
             </p>
           </div>
         </div>
