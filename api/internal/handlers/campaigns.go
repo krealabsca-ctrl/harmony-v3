@@ -361,14 +361,28 @@ func CreateCampaign(c *gin.Context) {
 	if countryCode == "" {
 		countryCode = "CR"
 	}
-	costPerMsg, _ := strconv.ParseFloat(c.PostForm("cost_per_message"), 64)
+	// Costo histórico: el SERVIDOR calcula el costo por mensaje al crear la campaña,
+	// buscando la tarifa vigente por (país, categoría de la plantilla) y lo CONGELA en
+	// la fila. Los reportes leen este valor guardado, así que cambiar los precios después
+	// NO altera los históricos — solo aplica a campañas futuras. El cost_per_message que
+	// envía el cliente se ignora (solo sirve para mostrar un estimado en la UI).
+	companyID := c.GetUint("company_id")
+	category := "marketing" // fallback si la campaña no usa plantilla
+	if templateID != nil {
+		var tplCat string
+		db.Raw(`SELECT category FROM message_templates WHERE id = ?`, *templateID).Scan(&tplCat)
+		if tplCat != "" {
+			category = strings.ToLower(tplCat)
+		}
+	}
+	costPerMsg := lookupWhatsAppPrice(db, companyID, countryCode, category)
 	// Costo total = costo por mensaje × número de destinatarios únicos
 	totalCost := costPerMsg * float64(len(phones))
 
 	chID := uint(channelID)
 	createdBy := c.GetUint("user_id")
 	camp := Campaign{
-		CompanyID:       c.GetUint("company_id"),
+		CompanyID:       companyID,
 		Name:            name,
 		ChannelID:       &chID,
 		TemplateID:      templateID,
@@ -517,6 +531,55 @@ type WhatsAppPricing struct {
 
 func (WhatsAppPricing) TableName() string { return "whatsapp_pricing" }
 
+// whatsappPricingRow refleja el esquema REAL (estrecho) de la tabla: una fila por
+// (country_code, category) con un único price_usd. El struct WhatsAppPricing de arriba
+// es solo la forma "ancha" (pivotada) que consume la UI; para escribir usamos este.
+type whatsappPricingRow struct {
+	ID          uint    `gorm:"primarykey" json:"id"`
+	CompanyID   uint    `gorm:"column:company_id" json:"company_id"`
+	CountryCode string  `gorm:"column:country_code" json:"country_code"`
+	CountryName string  `gorm:"column:country_name" json:"country_name"`
+	Category    string  `gorm:"column:category" json:"category"`
+	PriceUSD    float64 `gorm:"column:price_usd" json:"price_usd"`
+}
+
+func (whatsappPricingRow) TableName() string { return "whatsapp_pricing" }
+
+// pricingCategories son las cuatro categorías válidas según el CHECK de la migración.
+var pricingCategories = []string{"marketing", "utility", "authentication", "service"}
+
+// upsertPricingRow inserta o actualiza el precio de una (empresa, país, categoría).
+// Devuelve error para que el llamador pueda contar solo los upserts exitosos.
+func upsertPricingRow(db *gorm.DB, companyID uint, code, name, category string, price float64) error {
+	var existing whatsappPricingRow
+	err := db.Where("country_code = ? AND category = ? AND company_id = ?", code, category, companyID).
+		First(&existing).Error
+	if err == nil {
+		return db.Model(&existing).Updates(map[string]any{
+			"price_usd":    price,
+			"country_name": name,
+			"updated_at":   gorm.Expr("NOW()"),
+		}).Error
+	}
+	return db.Create(&whatsappPricingRow{
+		CompanyID:   companyID,
+		CountryCode: code,
+		CountryName: name,
+		Category:    category,
+		PriceUSD:    price,
+	}).Error
+}
+
+// lookupWhatsAppPrice busca el precio vigente por (país, categoría). Devuelve 0 si no
+// hay tarifa configurada. Se usa al CREAR una campaña para congelar el costo histórico.
+func lookupWhatsAppPrice(db *gorm.DB, companyID uint, countryCode, category string) float64 {
+	var price float64
+	db.Raw(`SELECT price_usd FROM whatsapp_pricing
+		WHERE company_id = ? AND country_code = ? AND LOWER(category) = LOWER(?)
+		LIMIT 1`, companyID, countryCode, category).Scan(&price)
+	return price
+}
+
 // ListPricing devuelve todas las tarifas de WhatsApp almacenadas en la base de datos,
 // ordenadas por nombre de país. Si la tabla está vacía (no se ejecutó la migración 003),
 // devuelve un arreglo vacío para no romper la UI.
@@ -566,10 +629,13 @@ func ListPricing(c *gin.Context) {
 //	404      — si el ID no existe
 func UpdatePricing(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
+	companyID := c.GetUint("company_id")
 	id := c.Param("id")
 
-	var row WhatsAppPricing
-	if err := db.First(&row, id).Error; err != nil {
+	// El id que envía la UI es una fila representativa del país (el pivot usa MIN(id)).
+	// A partir de ella obtenemos country_code/name para hacer upsert de las 4 categorías.
+	var head whatsappPricingRow
+	if err := db.First(&head, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "Tarifa no encontrada"})
 		return
 	}
@@ -582,27 +648,39 @@ func UpdatePricing(c *gin.Context) {
 	}
 	c.ShouldBindJSON(&req)
 
-	// Solo actualizar los campos que fueron enviados explícitamente en el body
-	updates := map[string]any{}
-	if req.Marketing != nil {
-		updates["marketing"] = *req.Marketing
+	// Cada categoría enviada se upserta como una fila (country_code, category, price_usd).
+	byCategory := map[string]*float64{
+		"marketing":      req.Marketing,
+		"utility":        req.Utility,
+		"authentication": req.Authentication,
+		"service":        req.Service,
 	}
-	if req.Utility != nil {
-		updates["utility"] = *req.Utility
-	}
-	if req.Authentication != nil {
-		updates["authentication"] = *req.Authentication
-	}
-	if req.Service != nil {
-		updates["service"] = *req.Service
-	}
-
-	if len(updates) > 0 {
-		db.Model(&row).Updates(updates)
-		db.First(&row, id) // Recargar para devolver valores actualizados
+	for _, cat := range pricingCategories {
+		if v := byCategory[cat]; v != nil {
+			if err := upsertPricingRow(db, companyID, head.CountryCode, head.CountryName, cat, *v); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al guardar la tarifa"})
+				return
+			}
+		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": row})
+	// Devolver la fila pivotada actualizada de ese país.
+	var out WhatsAppPricing
+	db.Raw(`SELECT
+		MIN(id) AS id,
+		country_code,
+		MAX(country_name) AS country_name,
+		MAX(price_usd) FILTER (WHERE category = 'marketing')      AS marketing,
+		MAX(price_usd) FILTER (WHERE category = 'utility')        AS utility,
+		MAX(price_usd) FILTER (WHERE category = 'authentication')  AS authentication,
+		MAX(price_usd) FILTER (WHERE category = 'service')        AS service,
+		MAX(updated_at) AS updated_at,
+		MAX(created_at) AS created_at
+	FROM whatsapp_pricing
+	WHERE country_code = ? AND company_id = ?
+	GROUP BY country_code`, head.CountryCode, companyID).Scan(&out)
+
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
 // metaNameToCode mapea los nombres de mercado del CSV oficial de Meta al código ISO
@@ -660,6 +738,7 @@ var metaNameToCode = map[string]string{
 // Si el país ya existe (por country_code) se actualizan sus precios (upsert).
 func ImportPricingCSV(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
+	companyID := c.GetUint("company_id")
 
 	// Leer contenido: primero multipart, luego JSON fallback
 	var rawBytes []byte
@@ -706,8 +785,12 @@ func ImportPricingCSV(c *gin.Context) {
 	skipped := 0
 	headerFound := false
 
-	// Índices de columnas — se detectan del header para ser robustos ante reordenamientos
+	// Índices de columnas — se detectan del header para ser robustos ante reordenamientos.
+	// Se soportan dos formatos: el rate card de Meta ("Market") y el simple que muestra la
+	// UI ("country_code"/"country_name").
 	colMarket := -1
+	colCountryCode := -1
+	colCountryName := -1
 	colMarketing := -1
 	colUtility := -1
 	colAuth := -1
@@ -719,12 +802,16 @@ func ImportPricingCSV(c *gin.Context) {
 			break // EOF u otro error de lectura
 		}
 
-		// Buscar la fila de encabezado (contiene "Market" o "market")
+		// Buscar la fila de encabezado (contiene "Market" o "country_code")
 		if !headerFound {
 			for i, cell := range record {
 				switch strings.ToLower(strings.TrimSpace(cell)) {
 				case "market":
 					colMarket = i
+				case "country_code":
+					colCountryCode = i
+				case "country_name":
+					colCountryName = i
 				case "marketing":
 					colMarketing = i
 				case "utility":
@@ -735,62 +822,73 @@ func ImportPricingCSV(c *gin.Context) {
 					colService = i
 				}
 			}
-			if colMarket >= 0 && colMarketing >= 0 {
+			if (colMarket >= 0 || colCountryCode >= 0) && colMarketing >= 0 {
 				headerFound = true
 			}
 			continue // esta fila era el header o un comentario, no es dato
 		}
 
-		// Filas de datos
-		if colMarket < 0 || colMarket >= len(record) {
-			skipped++
-			continue
+		getStr := func(idx int) string {
+			if idx < 0 || idx >= len(record) {
+				return ""
+			}
+			return strings.TrimSpace(record[idx])
 		}
-		market := strings.TrimSpace(record[colMarket])
-		if market == "" {
-			skipped++
-			continue
-		}
-
 		getCol := func(idx int) float64 {
 			if idx < 0 || idx >= len(record) {
 				return 0
 			}
 			return parsePrice(record[idx])
 		}
-		mkt := getCol(colMarketing)
-		utl := getCol(colUtility)
-		auth := getCol(colAuth)
-		svc := getCol(colService)
 
-		// Resolver country_code desde el mapa Meta→ISO
-		code, ok := metaNameToCode[strings.ToLower(market)]
-		if !ok {
+		// Resolver código de país y nombre según el formato detectado.
+		var code, name string
+		if colCountryCode >= 0 {
+			code = strings.ToUpper(getStr(colCountryCode))
+			name = getStr(colCountryName)
+			if name == "" {
+				name = code
+			}
+		} else {
+			market := getStr(colMarket)
+			if market == "" {
+				skipped++
+				continue
+			}
+			c, ok := metaNameToCode[strings.ToLower(market)]
+			if !ok {
+				skipped++
+				continue
+			}
+			code = c
+			name = market
+		}
+		if code == "" {
 			skipped++
 			continue
 		}
 
-		// Upsert por country_code
-		var existing WhatsAppPricing
-		db.Where("country_code = ?", code).First(&existing)
-		if existing.ID > 0 {
-			db.Model(&existing).Updates(map[string]any{
-				"marketing":      mkt,
-				"utility":        utl,
-				"authentication": auth,
-				"service":        svc,
-			})
-		} else {
-			db.Create(&WhatsAppPricing{
-				CountryCode:    code,
-				CountryName:    market,
-				Marketing:      mkt,
-				Utility:        utl,
-				Authentication: auth,
-				Service:        svc,
-			})
+		prices := map[string]float64{
+			"marketing":      getCol(colMarketing),
+			"utility":        getCol(colUtility),
+			"authentication": getCol(colAuth),
+			"service":        getCol(colService),
 		}
-		imported++
+
+		// Upsert de una fila por categoría. Solo se cuenta el país como importado si al
+		// menos una categoría se guardó sin error (a diferencia del bug anterior que
+		// contaba siempre e ignoraba los errores).
+		wrote := false
+		for _, cat := range pricingCategories {
+			if err := upsertPricingRow(db, companyID, code, name, cat, prices[cat]); err == nil {
+				wrote = true
+			}
+		}
+		if wrote {
+			imported++
+		} else {
+			skipped++
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"imported": imported, "skipped": skipped})
