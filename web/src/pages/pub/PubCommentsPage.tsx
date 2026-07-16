@@ -167,12 +167,12 @@ export default function PubCommentsPage() {
       </div>
 
       {/* Status tabs */}
-      <div className="flex items-center gap-1 border-b border-gray-100 dark:border-gray-700">
+      <div className="flex items-center gap-1 border-b border-gray-100 dark:border-gray-700 overflow-x-auto flex-nowrap">
         {STATUS_TABS.map(tab => (
           <button
             key={tab.key}
             onClick={() => setParam('status', tab.key)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors shrink-0 whitespace-nowrap ${
               status === tab.key
                 ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
                 : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
@@ -189,7 +189,7 @@ export default function PubCommentsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-xs">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input

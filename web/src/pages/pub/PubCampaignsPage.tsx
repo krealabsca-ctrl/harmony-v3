@@ -511,7 +511,7 @@ export default function PubCampaignsPage() {
               </div>
 
               {/* Fechas */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                     Fecha inicio <span className="text-red-400">*</span>
@@ -648,7 +648,7 @@ export default function PubCampaignsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Fecha inicio</label>
                   <input
@@ -747,7 +747,7 @@ export default function PubCampaignsPage() {
             ) : detail ? (
               <>
                 {/* Metrics */}
-                <div className="grid grid-cols-4 divide-x divide-gray-100 border-b border-gray-100 dark:border-gray-700">
+                <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-gray-100 border-b border-gray-100 dark:border-gray-700">
                   {[
                     { icon: DollarSign, label: 'Presupuesto',  value: fmtCurrency(detail.campaign.budget),          sub: `Gastado: ${fmtCurrency(detail.campaign.spent)}` },
                     { icon: TrendingUp, label: 'Impresiones',  value: fmtCompact(detail.campaign.impressions),      sub: null },
@@ -792,6 +792,7 @@ export default function PubCampaignsPage() {
                       No hay posts asociados a esta campaña.
                     </div>
                   ) : (
+                    <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
                         <tr>
@@ -828,6 +829,7 @@ export default function PubCampaignsPage() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   )}
                 </div>
               </>

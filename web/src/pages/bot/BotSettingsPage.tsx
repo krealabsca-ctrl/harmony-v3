@@ -168,7 +168,7 @@ function DeptRow({
             {channels.length === 0 ? (
               <p className="text-sm text-gray-400 italic">No hay canales activos.</p>
             ) : (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {channels.map(ch => {
                   const selected = form.channel_ids.includes(ch.id)
                   return (
@@ -385,7 +385,7 @@ export default function BotSettingsPage() {
           </div>
 
           {/* Parámetros globales */}
-          <div className="grid grid-cols-3 gap-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-gray-100 dark:border-gray-700">
             <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-3 text-center">
               <p className="text-xs text-gray-400 mb-1">Contexto máximo</p>
               <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">200K tokens</p>
@@ -431,7 +431,7 @@ export default function BotSettingsPage() {
       </div>
 
       {/* Base de conocimiento banner */}
-      <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-xl px-6 py-4 flex items-center justify-between">
+      <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-xl px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <p className="font-medium text-indigo-800 dark:text-indigo-200">Base de conocimiento</p>
           <p className="text-sm text-indigo-600 dark:text-indigo-400">

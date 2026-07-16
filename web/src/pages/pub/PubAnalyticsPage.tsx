@@ -129,11 +129,11 @@ function KpiCard({ icon, label, value, accent }: KpiCardProps) {
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wide leading-none mb-1">
+        <p className="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wide leading-none mb-1 truncate">
           {label}
         </p>
         <p
-          className="text-2xl font-bold leading-none tabular-nums"
+          className="text-2xl font-bold leading-none tabular-nums truncate"
           style={{ fontVariantNumeric: 'tabular-nums' }}
         >
           {value}
@@ -251,7 +251,7 @@ export default function PubAnalyticsPage() {
       </div>
 
       {/* ── Filters ────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
         <div className="relative flex items-center gap-2 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 bg-white dark:bg-gray-700 focus-within:ring-2 focus-within:ring-[var(--color-primary)]/30 focus-within:border-[var(--color-primary)] flex-1 max-w-xs">
           <CalendarDays size={15} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
           <input

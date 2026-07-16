@@ -69,10 +69,10 @@ interface KpiCardProps {
 function KpiCard({ label, value, accent }: KpiCardProps) {
   return (
     <div
-      className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 flex flex-col gap-1"
+      className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 flex flex-col gap-1 min-w-0"
       style={accent ? { borderTopColor: 'var(--color-primary)', borderTopWidth: 3 } : undefined}
     >
-      <span className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wide">{label}</span>
+      <span className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide truncate">{label}</span>
       <span
         className="text-3xl font-bold"
         style={{

@@ -758,6 +758,7 @@ function TabCostos({ from, to, deptId }: { from: string; to: string; deptId: str
           </div>
         </div>
         {(data?.indiv_cost_by_agent?.length ?? 0) > 0 ? (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs font-medium text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-gray-700">
@@ -780,6 +781,7 @@ function TabCostos({ from, to, deptId }: { from: string; to: string; deptId: str
               ))}
             </tbody>
           </table>
+          </div>
         ) : (
           <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-6">
             No hay mensajes individuales con costo en este período.
@@ -889,7 +891,7 @@ function TabPorAgente({ from, to, deptId }: { from: string; to: string; deptId: 
       </div>
 
       {/* Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-x-auto">
         {isLoading ? (
           <Skeleton />
         ) : (

@@ -390,7 +390,7 @@ export default function IntegrationGuidePage() {
           </div>
         </div>
         <div className="px-2 py-3 dark:bg-gray-800/80" style={{ backgroundColor: guide.color + '12' }}>
-          <div className="grid grid-cols-3 divide-x text-center" style={{ borderColor: guide.color + '33' }}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 sm:divide-x text-center" style={{ borderColor: guide.color + '33' }}>
             {[
               { label: 'Dificultad',      value: guide.difficulty },
               { label: 'Tiempo estimado', value: guide.time },
