@@ -19,9 +19,9 @@ func GetBrandingSettings(c *gin.Context) {
 	var setting models.SystemSetting
 	if err := db.Where("key = ?", "branding").First(&setting).Error; err != nil {
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{
-			"app_name":      "Harmony",
-			"primary_color": "#6366F1",
-			"logo_url":      "",
+			"system_name":     "Harmony",
+			"primary_color":   "#4F46E5",
+			"secondary_color": "#7C3AED",
 		}})
 		return
 	}
