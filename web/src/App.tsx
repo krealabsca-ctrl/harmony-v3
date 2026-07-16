@@ -51,7 +51,6 @@ import PubAnalyticsPage from '@/pages/pub/PubAnalyticsPage'
 import PubSettingsPage from '@/pages/pub/PubSettingsPage'
 import PubCommentsPage from '@/pages/pub/PubCommentsPage'
 import PubBrandKitPage from '@/pages/pub/PubBrandKitPage'
-import SmtpSettingsPage from '@/pages/settings/SmtpSettingsPage'
 import BrandingSettingsPage from '@/pages/settings/BrandingSettingsPage'
 import HistorySettingsPage from '@/pages/settings/HistorySettingsPage'
 import WhatsAppPricingPage from '@/pages/admin/WhatsAppPricingPage'
@@ -96,9 +95,8 @@ export default function App() {
         <Route path="admin/companies" element={<RequireRole allowed={['superadmin']}><CompaniesPage /></RequireRole>} />
         <Route path="admin/system-settings" element={<RequireRole allowed={['superadmin']}><SystemSettingsPage /></RequireRole>} />
         <Route path="admin/system-email" element={<RequireRole allowed={['superadmin']}><SystemEmailPage /></RequireRole>} />
+        <Route path="settings/branding" element={<RequireRole allowed={['superadmin']}><BrandingSettingsPage /></RequireRole>} />
         {/* Admin */}
-        <Route path="settings/smtp" element={<RequireRole allowed={['admin']}><SmtpSettingsPage /></RequireRole>} />
-        <Route path="settings/branding" element={<RequireRole allowed={['admin']}><BrandingSettingsPage /></RequireRole>} />
         <Route path="settings/history" element={<RequireRole allowed={['admin']}><HistorySettingsPage /></RequireRole>} />
         <Route path="admin/users" element={<RequireRole allowed={['admin']}><UsersPage /></RequireRole>} />
         <Route path="admin/departments" element={<RequireRole allowed={['admin']}><DepartmentsPage /></RequireRole>} />
