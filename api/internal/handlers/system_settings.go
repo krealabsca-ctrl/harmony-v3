@@ -54,6 +54,7 @@ func setSystemSetting(key, value string) {
 // GetSystemConfig — GET /system-config (sin auth, llamado al arrancar el frontend)
 func GetSystemConfig(c *gin.Context) {
 	faviconPath := getSystemSettingValue("favicon_path")
+	logoPath := getSystemSettingValue("logo_path")
 	appName := getSystemSettingValue("app_name")
 	if appName == "" {
 		appName = "Harmony"
@@ -68,15 +69,25 @@ func GetSystemConfig(c *gin.Context) {
 		}
 	}
 
+	logoURL := ""
+	if logoPath != "" {
+		cleaned := filepath.ToSlash(filepath.Clean(logoPath))
+		if strings.HasPrefix(cleaned, "uploads/") && !strings.Contains(cleaned, "..") {
+			logoURL = "/" + cleaned
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"app_name":    appName,
 		"favicon_url": faviconURL,
+		"logo_url":    logoURL,
 	})
 }
 
 // GetSystemSettings — GET /admin/system-settings (superadmin)
 func GetSystemSettings(c *gin.Context) {
 	faviconPath := getSystemSettingValue("favicon_path")
+	logoPath := getSystemSettingValue("logo_path")
 	appName := getSystemSettingValue("app_name")
 	if appName == "" {
 		appName = "Harmony"
@@ -90,9 +101,18 @@ func GetSystemSettings(c *gin.Context) {
 		}
 	}
 
+	logoURL := ""
+	if logoPath != "" {
+		cleaned := filepath.ToSlash(filepath.Clean(logoPath))
+		if strings.HasPrefix(cleaned, "uploads/") && !strings.Contains(cleaned, "..") {
+			logoURL = "/" + cleaned
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"app_name":    appName,
 		"favicon_url": faviconURL,
+		"logo_url":    logoURL,
 	})
 }
 
@@ -185,5 +205,78 @@ func UploadSystemFavicon(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":     "Favicon actualizado",
 		"favicon_url": "/" + storedPath,
+	})
+}
+
+// UploadSystemLogo — POST /admin/system-settings/logo (superadmin)
+func UploadSystemLogo(c *gin.Context) {
+	file, err := c.FormFile("logo")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "No se recibió el archivo"})
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	if ext != ".png" && ext != ".ico" && ext != ".svg" && ext != ".jpg" && ext != ".jpeg" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Formato no permitido. Usa PNG, ICO, SVG o JPG"})
+		return
+	}
+
+	dir := "uploads/system"
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al crear directorio"})
+		return
+	}
+
+	filename := fmt.Sprintf("logo%s", ext)
+	savePath := filepath.Join(dir, filename)
+
+	if ext == ".svg" {
+		f, err := file.Open()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al procesar el archivo"})
+			return
+		}
+		svgBytes, err := io.ReadAll(f)
+		f.Close()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al leer el archivo"})
+			return
+		}
+		svgLower := strings.ToLower(string(svgBytes))
+		dangerousPatterns := []string{
+			"<script", "javascript:", "vbscript:", "data:text/html",
+			"onload=", "onerror=", "onclick=", "onmouseover=", "onfocus=", "onblur=",
+			"oninput=", "onchange=", "onkeydown=", "onkeyup=", "onkeypress=", "onsubmit=",
+			"onmouseenter=", "onmouseleave=", "onanimationstart=", "ontransitionend=",
+			"eval(", "expression(",
+			"xlink:href",
+			"<foreignobject",
+			"href=",
+			"<use", "<a ",
+			"<set", "<animate", "attributename",
+			"<handler", "<listener",
+			"&#",
+			"%3c", "%3e",
+		}
+		for _, pattern := range dangerousPatterns {
+			if strings.Contains(svgLower, pattern) {
+				c.JSON(http.StatusBadRequest, gin.H{"message": "El archivo SVG contiene contenido no permitido"})
+				return
+			}
+		}
+	}
+
+	if err := c.SaveUploadedFile(file, savePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al guardar el archivo"})
+		return
+	}
+
+	storedPath := strings.ReplaceAll(savePath, "\\", "/")
+	setSystemSetting("logo_path", storedPath)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "Logo actualizado",
+		"logo_url": "/" + storedPath,
 	})
 }

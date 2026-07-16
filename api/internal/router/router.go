@@ -147,6 +147,7 @@ func Setup() *gin.Engine {
 			sa.GET("/admin/system-settings", handlers.GetSystemSettings)
 			sa.PUT("/admin/system-settings", handlers.UpdateSystemSettings)
 			sa.POST("/admin/system-settings/favicon", handlers.UploadSystemFavicon)
+			sa.POST("/admin/system-settings/logo", handlers.UploadSystemLogo)
 			sa.GET("/admin/system-settings/smtp", handlers.GetSystemSmtp)
 			sa.PUT("/admin/system-settings/smtp", handlers.UpdateSystemSmtp)
 			sa.POST("/admin/system-settings/smtp/test", handlers.TestSystemSmtp)
