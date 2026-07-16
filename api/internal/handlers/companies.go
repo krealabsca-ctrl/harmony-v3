@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"math/big"
 	"net/http"
 	"strings"
 
@@ -8,12 +10,91 @@ import (
 	"harmony-api/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 )
+
+// generateTempPassword genera una contraseña temporal legible (sin caracteres ambiguos)
+// usando crypto/rand. Se muestra una sola vez al superadmin al crear/restablecer el admin.
+func generateTempPassword(n int) string {
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+	b := make([]byte, n)
+	for i := range b {
+		idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+		if err != nil {
+			// Fallback determinista extremadamente improbable; mantiene longitud.
+			b[i] = alphabet[i%len(alphabet)]
+			continue
+		}
+		b[i] = alphabet[idx.Int64()]
+	}
+	return string(b)
+}
+
+// provisionCompanyAdmin crea (o restablece) el usuario admin de una empresa dentro de su
+// propia base de datos, usando el correo del encargado como login. Devuelve la contraseña
+// temporal en texto plano para mostrarla una única vez.
+func provisionCompanyAdmin(company *models.Company) (string, error) {
+	db, err := database.GetCompanyDB(company.ID, company.DBName)
+	if err != nil {
+		return "", err
+	}
+
+	tempPassword := generateTempPassword(12)
+	hash, err := bcrypt.GenerateFromPassword([]byte(tempPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+
+	// ¿Ya existe un usuario con ese email? Si sí, solo restablecemos su contraseña y rol.
+	var existing models.User
+	if err := db.Where("email = ?", company.ContactEmail).First(&existing).Error; err == nil {
+		db.Model(&existing).Updates(map[string]any{
+			"password":               string(hash),
+			"role":                   "admin",
+			"name":                   company.ContactName,
+			"can_send_campaigns":     true,
+			"can_access_advertising": true,
+		})
+		return tempPassword, nil
+	}
+
+	companyID := company.ID
+	admin := models.User{
+		CompanyID:            &companyID,
+		Name:                 company.ContactName,
+		Email:                company.ContactEmail,
+		Password:             string(hash),
+		Role:                 "admin",
+		CanSendCampaigns:     true,
+		CanAccessAdvertising: true,
+	}
+	if err := db.Create(&admin).Error; err != nil {
+		return "", err
+	}
+	return tempPassword, nil
+}
 
 // ListCompanies retorna todas las empresas (solo superadmin)
 func ListCompanies(c *gin.Context) {
 	var companies []models.Company
 	database.SystemDB.Order("name").Find(&companies)
+
+	// Llenar conteos de usuarios/departamentos consultando la DB de cada empresa.
+	for i := range companies {
+		if companies[i].DBName == "" {
+			continue
+		}
+		cdb, err := database.GetCompanyDB(companies[i].ID, companies[i].DBName)
+		if err != nil {
+			continue
+		}
+		var users, depts int64
+		cdb.Table("users").Where("deleted_at IS NULL AND is_bot = false").Count(&users)
+		cdb.Table("departments").Where("deleted_at IS NULL").Count(&depts)
+		companies[i].UsersCount = int(users)
+		companies[i].DepartmentsCount = int(depts)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"data": companies,
 		"links": gin.H{
@@ -98,7 +179,65 @@ func CreateCompany(c *gin.Context) {
 	database.SystemDB.Model(&company).Update("db_name", dbName)
 	company.DBName = dbName
 
-	c.JSON(http.StatusCreated, company)
+	// Crear automáticamente el usuario admin de la empresa (login = correo del encargado).
+	// Si falla, la empresa igual queda creada; el superadmin puede reintentar con "Acceso admin".
+	tempPassword, adminErr := provisionCompanyAdmin(&company)
+
+	resp := gin.H{
+		"id":                  company.ID,
+		"name":                company.Name,
+		"slug":                company.Slug,
+		"logo_path":           company.LogoPath,
+		"primary_color":       company.PrimaryColor,
+		"secondary_color":     company.SecondaryColor,
+		"is_active":           company.IsActive,
+		"omnichannel_enabled": company.OmnichannelEnabled,
+		"advertising_enabled": company.AdvertisingEnabled,
+		"contact_name":        company.ContactName,
+		"contact_email":       company.ContactEmail,
+		"contact_phone":       company.ContactPhone,
+		"retention_days":      company.RetentionDays,
+	}
+	if adminErr == nil {
+		resp["admin_email"] = company.ContactEmail
+		resp["admin_password"] = tempPassword
+	} else {
+		resp["admin_error"] = adminErr.Error()
+	}
+
+	c.JSON(http.StatusCreated, resp)
+}
+
+// ResetCompanyAdmin crea o restablece el usuario admin de una empresa existente y devuelve
+// una contraseña temporal (solo superadmin). Sirve para empresas creadas antes de que el
+// bootstrap de admin existiera, o cuando el encargado olvidó su clave.
+//
+// Responde a: POST /admin/companies/:id/reset-admin
+func ResetCompanyAdmin(c *gin.Context) {
+	var company models.Company
+	if err := database.SystemDB.First(&company, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Empresa no encontrada"})
+		return
+	}
+	if strings.TrimSpace(company.ContactEmail) == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "La empresa no tiene correo de encargado. Edítala y agrégalo primero."})
+		return
+	}
+	if company.DBName == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "La empresa no tiene base de datos provisionada."})
+		return
+	}
+
+	tempPassword, err := provisionCompanyAdmin(&company)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al crear el acceso admin: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"admin_email":    company.ContactEmail,
+		"admin_password": tempPassword,
+	})
 }
 
 // UpdateCompany actualiza los datos de una empresa
