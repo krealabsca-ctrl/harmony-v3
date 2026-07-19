@@ -4,7 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+
+	"harmony-api/internal/config"
+	"harmony-api/internal/database"
+	"harmony-api/internal/models"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -142,14 +147,16 @@ func GetBotSettings(c *gin.Context) {
 		channels = []BotChannel{}
 	}
 
-	// ¿Tiene API key? Buscar en system_settings
-	var apiKeySetting struct {
-		Value string `gorm:"column:value"`
+	// ¿Hay una key usable? La empresa puede tener la suya (cifrada en companies) o caer
+	// en la global del .env. has_api_key indica que el bot tiene con qué responder.
+	hasKey := config.App.AnthropicKey != ""
+	var company models.Company
+	if database.SystemDB.First(&company, c.GetUint("company_id")).Error == nil && company.AnthropicAPIKey != "" {
+		hasKey = true
 	}
-	db.Table("system_settings").Select("value").Where("key = ?", "anthropic_api_key").First(&apiKeySetting)
 
 	c.JSON(http.StatusOK, BotSettingsResponse{
-		HasAPIKey:   apiKeySetting.Value != "",
+		HasAPIKey:   hasKey,
 		Departments: deptList,
 		Channels:    channels,
 	})
@@ -258,9 +265,10 @@ func ToggleBotDepartment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"enabled": cfg.IsEnabled})
 }
 
-// SaveBotAPIKey guarda la API key de Anthropic en system_settings.
+// SaveBotAPIKey guarda la API key de Anthropic propia de la empresa, cifrada en reposo.
+// Se almacena en companies.anthropic_api_key (harmony_system) con el serializer AES-256,
+// no en la DB de la empresa. Una key vacía borra la propia y vuelve al fallback global.
 func SaveBotAPIKey(c *gin.Context) {
-	db := c.MustGet("db").(*gorm.DB)
 	var req struct {
 		APIKey string `json:"api_key" binding:"required"`
 	}
@@ -269,11 +277,16 @@ func SaveBotAPIKey(c *gin.Context) {
 		return
 	}
 
-	// Upsert en system_settings
-	db.Exec(`INSERT INTO system_settings (key, value, updated_at)
-		VALUES ('anthropic_api_key', ?, NOW())
-		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-		req.APIKey)
+	var company models.Company
+	if err := database.SystemDB.First(&company, c.GetUint("company_id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Empresa no encontrada"})
+		return
+	}
+	company.AnthropicAPIKey = strings.TrimSpace(req.APIKey)
+	if err := database.SystemDB.Save(&company).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al guardar la API key: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "API key guardada"})
 }
