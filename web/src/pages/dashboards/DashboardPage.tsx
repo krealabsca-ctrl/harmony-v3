@@ -517,7 +517,7 @@ export default function DashboardPage() {
       const res = await api.get('/dashboard', { params })
       return res.data
     },
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   })
 
   return (

@@ -1148,23 +1148,25 @@ export default function InboxPage() {
     return () => clearTimeout(t)
   }, [search])
 
-  /* Carga la lista de conversaciones; se refresca automáticamente cada 12 segundos (polling) */
+  /* Lista de conversaciones. El tiempo real llega por WebSocket (ver efecto más abajo);
+     el polling queda solo como respaldo por si el socket se cae — de 12s a 60s. */
   const { data: convData } = useQuery({
     queryKey: ['conversations', tab, debouncedSearch],
     queryFn: () =>
       api.get('/conversations', { params: { status: tab, q: debouncedSearch || undefined } })
         .then(r => r.data as { data: Conversation[]; counts: { all: number; open: number; unread: number } }),
-    refetchInterval: 12000,
+    refetchInterval: 60000,
   })
   const convList: Conversation[] = convData?.data ?? []
   const counts = convData?.counts ?? { all: 0, open: 0, unread: 0 }
 
-  /* Carga el detalle de la conversación seleccionada; refresca cada 10s */
+  /* Detalle de la conversación seleccionada. Los mensajes llegan por WS; el polling de
+     metadatos (estado/agente) baja de 10s a 30s como respaldo. */
   const { data: conv } = useQuery<Conversation>({
     queryKey: ['conversation', selectedId],
     queryFn: () => api.get(`/conversations/${selectedId}`).then(r => r.data.data),
     enabled: !!selectedId,
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   })
 
   /* Carga el historial de mensajes de la conversación seleccionada */
@@ -1387,6 +1389,17 @@ export default function InboxPage() {
     })
     return () => unsub()
   }, [selectedId, subscribe, qc])
+
+  /* Suscripción al canal `inbox` de la empresa (company.{id}.inbox): actualiza la LISTA
+   * de conversaciones al instante cuando llega un mensaje entrante o cambia el estado de
+   * una conversación, sin depender del polling. Es independiente de la conversación abierta,
+   * por eso se suscribe una sola vez. El polling de 60s queda solo como respaldo. */
+  useEffect(() => {
+    const refreshList = () => qc.invalidateQueries({ queryKey: ['conversations'] })
+    const unsubMsg = subscribe('inbox', 'MessageReceived', refreshList)
+    const unsubUpd = subscribe('inbox', 'ConversationUpdated', refreshList)
+    return () => { unsubMsg(); unsubUpd() }
+  }, [subscribe, qc])
 
   /* Auto-scroll al mensaje más reciente cada vez que cambia la lista de mensajes */
   useEffect(() => {

@@ -223,9 +223,18 @@ func ResetCompanyAdmin(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "La empresa no tiene correo de encargado. Edítala y agrégalo primero."})
 		return
 	}
+
+	// Auto-reparar: si la empresa no tiene DB provisionada (registro viejo roto),
+	// provisionarla ahora. ProvisionCompanyDB es idempotente (CREATE DATABASE y
+	// migraciones con IF NOT EXISTS), así que es seguro llamarlo aunque exista.
 	if company.DBName == "" {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "La empresa no tiene base de datos provisionada."})
-		return
+		dbName, err := database.ProvisionCompanyDB(company.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al provisionar la base de datos: " + err.Error()})
+			return
+		}
+		database.SystemDB.Model(&company).Update("db_name", dbName)
+		company.DBName = dbName
 	}
 
 	tempPassword, err := provisionCompanyAdmin(&company)

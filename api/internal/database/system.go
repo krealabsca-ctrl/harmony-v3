@@ -50,8 +50,12 @@ func ConnectSystem() error {
 
 	// Ejecutar migraciones del sistema (idempotentes). Antes NO se corrían nunca, por lo
 	// que columnas nuevas como companies.contact_email no existían en producción.
+	// NO es fatal: si una migración falla, se registra y el API sigue arriba (una migración
+	// nunca debe tumbar el servicio completo).
 	if err := RunSystemMigrations(db); err != nil {
-		return fmt.Errorf("system migrations: %w", err)
+		fmt.Printf("⚠ Error ejecutando migraciones del sistema (el API continúa): %v\n", err)
+	} else {
+		fmt.Println("✓ Migraciones del sistema aplicadas")
 	}
 
 	return nil
