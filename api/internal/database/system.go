@@ -48,5 +48,11 @@ func ConnectSystem() error {
 		company_id BIGINT NOT NULL
 	)`)
 
+	// Ejecutar migraciones del sistema (idempotentes). Antes NO se corrían nunca, por lo
+	// que columnas nuevas como companies.contact_email no existían en producción.
+	if err := RunSystemMigrations(db); err != nil {
+		return fmt.Errorf("system migrations: %w", err)
+	}
+
 	return nil
 }
