@@ -26,10 +26,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"harmony-api/internal/circuitbreaker"
 	"harmony-api/internal/config"
+	"harmony-api/internal/database"
 	"harmony-api/internal/models"
 	"harmony-api/internal/ws"
 
@@ -239,8 +241,14 @@ func runBotFlow(db *gorm.DB, conv *models.Conversation, msg *models.Message, isN
 		return
 	}
 
-	if config.App.AnthropicKey == "" {
-		// No hay API key de Anthropic configurada en el entorno — asignar a agente.
+	// Resolver la API key: primero la propia de la empresa (cifrada en companies), y si no
+	// tiene, la global del .env. Sin ninguna, se asigna a un agente humano.
+	apiKey := config.App.AnthropicKey
+	var company models.Company
+	if database.SystemDB.First(&company, companyID).Error == nil && company.AnthropicAPIKey != "" {
+		apiKey = company.AnthropicAPIKey
+	}
+	if apiKey == "" {
 		assignToAgent(db, conv, companyID)
 		return
 	}
@@ -262,13 +270,28 @@ func runBotFlow(db *gorm.DB, conv *models.Conversation, msg *models.Message, isN
 		model = "claude-haiku-4-5-20251001"
 	}
 
-	// Llamar a la API de Claude con el mensaje del usuario.
-	botReply, err := callClaudeAPI(config.App.AnthropicKey, model, systemPrompt, msg.Body, maxTokens)
-	if err != nil || botReply == "NEEDS_HUMAN" || botReply == "" {
-		// Tres casos de derivación a agente humano:
-		//   - err != nil     : error de red o de la API de Anthropic.
-		//   - "NEEDS_HUMAN"  : el modelo indicó explícitamente que no puede responder.
-		//   - botReply == "" : respuesta vacía inesperada.
+	// Memoria de conversación: construir el historial reciente (no solo el último mensaje)
+	// respetando el presupuesto de caracteres del bot, para que mantenga el hilo.
+	maxChars := botCfg.MaxContextChars
+	if maxChars <= 0 {
+		maxChars = 8000
+	}
+	messages := buildBotMessages(db, conv.ID, maxChars)
+	if len(messages) == 0 {
+		// Sin historial utilizable, usar al menos el mensaje actual.
+		messages = []anthropicMsg{{Role: "user", Content: msg.Body}}
+	}
+
+	// Llamar a la API de Claude con el historial de la conversación.
+	botReply, err := callClaudeAPI(apiKey, model, systemPrompt, messages, maxTokens)
+	if err != nil {
+		// Error de red o de la API de Anthropic: registrarlo (antes se perdía) y derivar.
+		log.Printf("ERROR: fallo del bot IA (conv %d, empresa %d): %v", conv.ID, companyID, err)
+		assignToAgent(db, conv, companyID)
+		return
+	}
+	if botReply == "NEEDS_HUMAN" || botReply == "" {
+		// El modelo pidió atención humana, o respuesta vacía inesperada.
 		assignToAgent(db, conv, companyID)
 		return
 	}
@@ -294,6 +317,66 @@ func runBotFlow(db *gorm.DB, conv *models.Conversation, msg *models.Message, isN
 		"conversation_id": conv.ID,
 		"message":         botMsg,
 	})
+}
+
+// anthropicMsg es un turno de la conversación en el formato de la API de Anthropic.
+type anthropicMsg struct {
+	Role    string // "user" | "assistant"
+	Content string
+}
+
+// buildBotMessages arma el historial reciente de una conversación en el formato que espera
+// la API de Anthropic: turnos alternando user/assistant, empezando por "user". Entrantes =
+// user, salientes = assistant. Fusiona turnos consecutivos del mismo rol (la API exige
+// alternancia) y recorta al presupuesto de caracteres conservando los mensajes más recientes.
+func buildBotMessages(db *gorm.DB, convID uint, maxChars int) []anthropicMsg {
+	var rows []models.Message
+	db.Where("conversation_id = ? AND type = ?", convID, "text").
+		Order("id DESC").Limit(40).Find(&rows)
+	// Invertir a orden cronológico (más viejo primero).
+	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
+		rows[i], rows[j] = rows[j], rows[i]
+	}
+
+	var msgs []anthropicMsg
+	for _, m := range rows {
+		body := strings.TrimSpace(m.Body)
+		if body == "" {
+			continue
+		}
+		role := "user"
+		if m.Direction == "outbound" {
+			role = "assistant"
+		}
+		if n := len(msgs); n > 0 && msgs[n-1].Role == role {
+			msgs[n-1].Content += "\n" + body // fusionar turnos consecutivos del mismo rol
+			continue
+		}
+		msgs = append(msgs, anthropicMsg{Role: role, Content: body})
+	}
+
+	// Debe empezar por un turno "user".
+	for len(msgs) > 0 && msgs[0].Role != "user" {
+		msgs = msgs[1:]
+	}
+	if len(msgs) == 0 {
+		return msgs
+	}
+
+	// Recortar al presupuesto de caracteres conservando los turnos más recientes.
+	total, start := 0, len(msgs)
+	for i := len(msgs) - 1; i >= 0; i-- {
+		total += len(msgs[i].Content)
+		if total > maxChars {
+			break
+		}
+		start = i
+	}
+	msgs = msgs[start:]
+	for len(msgs) > 0 && msgs[0].Role != "user" {
+		msgs = msgs[1:]
+	}
+	return msgs
 }
 
 // assignToAgent busca el mejor agente disponible y asigna la conversación abierta.
@@ -394,15 +477,17 @@ func broadcastConvUpdate(conv *models.Conversation, companyID uint) {
 // Retorna:
 //   - string: texto de la primera entrada del array "content" de la respuesta.
 //   - error : si la petición HTTP falla, el status no es 200, o la respuesta no es parseable.
-func callClaudeAPI(apiKey, model, systemPrompt, userMessage string, maxTokens int) (string, error) {
+func callClaudeAPI(apiKey, model, systemPrompt string, messages []anthropicMsg, maxTokens int) (string, error) {
 	// Construir el payload según la especificación de la API de Mensajes de Anthropic.
+	msgArr := make([]map[string]any, len(messages))
+	for i, m := range messages {
+		msgArr[i] = map[string]any{"role": m.Role, "content": m.Content}
+	}
 	payload := map[string]any{
 		"model":      model,
 		"max_tokens": maxTokens,
 		"system":     systemPrompt,
-		"messages": []map[string]any{
-			{"role": "user", "content": userMessage},
-		},
+		"messages":   msgArr,
 	}
 	body, _ := json.Marshal(payload)
 

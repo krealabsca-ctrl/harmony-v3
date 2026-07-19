@@ -24,6 +24,9 @@ type Company struct {
 	ContactPhone       string          `gorm:"default:''" json:"contact_phone"`
 	RetentionDays      int             `gorm:"default:0" json:"retention_days"`
 	RetentionWarnedAt  *time.Time      `json:"retention_warned_at"`
+	// AnthropicAPIKey: key de Anthropic propia de la empresa, cifrada en reposo con el
+	// serializer "encrypted" (AES-256-GCM). Nunca se expone en JSON. Vacía = usar la global.
+	AnthropicAPIKey    string          `gorm:"column:anthropic_api_key;serializer:encrypted" json:"-"`
 	CreatedAt          time.Time       `json:"created_at"`
 	UpdatedAt          time.Time       `json:"updated_at"`
 	DeletedAt          gorm.DeletedAt  `gorm:"index" json:"-"`
