@@ -91,15 +91,49 @@ func RunSystemMigrations(db *gorm.DB) error {
 	return nil
 }
 
-// runCompanyMigrations ejecuta los archivos SQL en migrations/company/ en orden numérico
+// MigrateExistingCompanies aplica las migraciones de empresa PENDIENTES sobre todas las
+// empresas ya provisionadas (control de versiones vía schema_migrations, ver
+// runCompanyMigrations). Antes las migraciones solo corrían al crear la empresa, así que las
+// columnas nuevas nunca llegaban a las empresas existentes. Se llama al arrancar y es
+// NO-fatal por empresa: si una falla, se registra y se continúa con las demás.
+func MigrateExistingCompanies() {
+	var companies []struct {
+		ID     uint
+		DBName string
+	}
+	SystemDB.Table("companies").
+		Select("id, db_name").
+		Where("db_name <> '' AND deleted_at IS NULL").
+		Scan(&companies)
+
+	for _, co := range companies {
+		db, err := GetCompanyDB(co.ID, co.DBName)
+		if err != nil {
+			fmt.Printf("⚠ migraciones empresa %d: no se pudo conectar: %v\n", co.ID, err)
+			continue
+		}
+		if err := runCompanyMigrations(db); err != nil {
+			fmt.Printf("⚠ migraciones empresa %d (%s): %v\n", co.ID, co.DBName, err)
+		}
+	}
+	fmt.Printf("✓ Migraciones de empresa revisadas en %d empresa(s)\n", len(companies))
+}
+
+// companyMigrationBaseline marca la última migración que existía ANTES de introducir el
+// control de versiones (schema_migrations). En bases ya provisionadas, todas las migraciones
+// hasta este baseline se dan por aplicadas SIN re-ejecutarlas — esto evita re-correr
+// migraciones destructivas (p.ej. 010 hace DROP TABLE pub_brand_kit, que borraría datos).
+const companyMigrationBaseline = "013_security_indexes.sql"
+
+// runCompanyMigrations ejecuta las migraciones de migrations/company/ que aún no se han
+// aplicado, registrándolas en schema_migrations para no repetirlas. Idempotente y seguro de
+// llamar en cada arranque (ver MigrateExistingCompanies).
 func runCompanyMigrations(db *gorm.DB) error {
 	entries, err := fs.ReadDir(companyMigrations, "migrations/company")
 	if err != nil {
-		// Si el directorio no existe todavía, no es error
-		return nil
+		return nil // Si el directorio no existe todavía, no es error
 	}
 
-	// Ordenar por nombre para garantizar el orden correcto (001_, 002_, etc.)
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
 		if filepath.Ext(e.Name()) == ".sql" {
@@ -108,7 +142,36 @@ func runCompanyMigrations(db *gorm.DB) error {
 	}
 	sort.Strings(names)
 
+	// Tabla de control de versiones (una por DB de empresa).
+	db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+		version TEXT PRIMARY KEY,
+		applied_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+
+	applied := map[string]bool{}
+	var rows []string
+	db.Raw(`SELECT version FROM schema_migrations`).Scan(&rows)
+	for _, v := range rows {
+		applied[v] = true
+	}
+
+	// Backfill único: si no hay nada registrado pero la DB ya estaba provisionada (existe
+	// la tabla users), marcamos como aplicadas las migraciones hasta el baseline sin correrlas.
+	firstTime := len(rows) == 0
+	preexisting := false
+	if firstTime {
+		db.Raw(`SELECT EXISTS(SELECT 1 FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = 'users')`).Scan(&preexisting)
+	}
+
 	for _, name := range names {
+		if applied[name] {
+			continue
+		}
+		if firstTime && preexisting && name <= companyMigrationBaseline {
+			db.Exec(`INSERT INTO schema_migrations (version) VALUES (?) ON CONFLICT DO NOTHING`, name)
+			continue
+		}
 		data, err := companyMigrations.ReadFile("migrations/company/" + name)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", name, err)
@@ -116,6 +179,7 @@ func runCompanyMigrations(db *gorm.DB) error {
 		if err := db.Exec(string(data)).Error; err != nil {
 			return fmt.Errorf("exec %s: %w", name, err)
 		}
+		db.Exec(`INSERT INTO schema_migrations (version) VALUES (?) ON CONFLICT DO NOTHING`, name)
 	}
 	return nil
 }

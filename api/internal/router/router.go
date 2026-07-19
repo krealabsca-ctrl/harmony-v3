@@ -277,6 +277,7 @@ func Setup() *gin.Engine {
 				adm.GET("/bot/documents", handlers.ListBotDocuments)
 				adm.POST("/bot/documents", handlers.UploadBotDocument)
 				adm.DELETE("/bot/documents/:id", handlers.DeleteBotDocument)
+				adm.POST("/bot/documents/:id/toggle-active", handlers.ToggleBotDocumentActive)
 
 				// SMTP y Branding se gestionan solo desde el superadmin (config global de
 				// la plataforma). Ver grupo `sa` más arriba. Aquí el admin de empresa solo

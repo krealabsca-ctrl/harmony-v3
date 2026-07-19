@@ -263,6 +263,16 @@ func runBotFlow(db *gorm.DB, conv *models.Conversation, msg *models.Message, isN
 	// resolver la consulta, para que el sistema lo derive a un agente sin mostrar texto al usuario.
 	systemPrompt += "\n\nIMPORTANTE: Si no puedes responder con certeza o la consulta requiere atención humana personalizada, responde únicamente con la palabra NEEDS_HUMAN sin ningún texto adicional."
 
+	// Base de conocimiento: inyectar el texto de los documentos activos del departamento de
+	// la conversación (o globales) en el system prompt, acotado por el presupuesto del bot.
+	kbBudget := botCfg.MaxContextChars
+	if kbBudget <= 0 {
+		kbBudget = 40000
+	}
+	if kb := buildKnowledgeContext(db, conv, kbBudget); kb != "" {
+		systemPrompt += "\n\n=== BASE DE CONOCIMIENTO ===\nUsa la siguiente información para responder cuando aplique:\n\n" + kb
+	}
+
 	// Usar valores del config del bot o caer en los defaults razonables.
 	maxTokens := 512
 	model := botCfg.Model
@@ -270,13 +280,9 @@ func runBotFlow(db *gorm.DB, conv *models.Conversation, msg *models.Message, isN
 		model = "claude-haiku-4-5-20251001"
 	}
 
-	// Memoria de conversación: construir el historial reciente (no solo el último mensaje)
-	// respetando el presupuesto de caracteres del bot, para que mantenga el hilo.
-	maxChars := botCfg.MaxContextChars
-	if maxChars <= 0 {
-		maxChars = 8000
-	}
-	messages := buildBotMessages(db, conv.ID, maxChars)
+	// Memoria de conversación: historial reciente (no solo el último mensaje) para mantener
+	// el hilo. Acotado a ~8k caracteres, aparte del presupuesto de la base de conocimiento.
+	messages := buildBotMessages(db, conv.ID, 8000)
 	if len(messages) == 0 {
 		// Sin historial utilizable, usar al menos el mensaje actual.
 		messages = []anthropicMsg{{Role: "user", Content: msg.Body}}
@@ -317,6 +323,39 @@ func runBotFlow(db *gorm.DB, conv *models.Conversation, msg *models.Message, isN
 		"conversation_id": conv.ID,
 		"message":         botMsg,
 	})
+}
+
+// buildKnowledgeContext arma el bloque de base de conocimiento para el system prompt:
+// concatena el texto de los documentos activos y listos que aplican a la conversación
+// (los del departamento de la conversación + los globales), acotado a maxChars.
+func buildKnowledgeContext(db *gorm.DB, conv *models.Conversation, maxChars int) string {
+	type kbDoc struct {
+		Name          string
+		ExtractedText string
+	}
+	var docs []kbDoc
+	q := db.Table("bot_documents").
+		Select("name, extracted_text").
+		Where("is_active = true AND status = 'ready' AND extracted_text <> ''")
+	if conv.DepartmentID != nil {
+		q = q.Where("department_id = ? OR department_id IS NULL", *conv.DepartmentID)
+	} else {
+		q = q.Where("department_id IS NULL")
+	}
+	q.Order("id ASC").Scan(&docs)
+
+	var b strings.Builder
+	for _, d := range docs {
+		block := "## " + d.Name + "\n" + strings.TrimSpace(d.ExtractedText) + "\n\n"
+		if b.Len()+len(block) > maxChars {
+			if rem := maxChars - b.Len(); rem > 0 {
+				b.WriteString(block[:rem])
+			}
+			break
+		}
+		b.WriteString(block)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // anthropicMsg es un turno de la conversación en el formato de la API de Anthropic.

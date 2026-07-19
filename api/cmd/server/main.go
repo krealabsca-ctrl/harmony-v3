@@ -30,6 +30,10 @@ func main() {
 	}
 	log.Println("✓ Conectado a harmony_system")
 
+	// Poner al día el esquema de las empresas ya provisionadas (no-fatal por empresa).
+	// En segundo plano para no retrasar el arranque del servidor.
+	go database.MigrateExistingCompanies()
+
 	// Iniciar el hub de WebSockets en goroutine
 	go ws.GlobalHub.Run()
 	log.Println("✓ WebSocket Hub iniciado")

@@ -102,8 +102,10 @@ export default function BotKnowledgePage() {
   const { data: docsData, isLoading } = useQuery<DocumentsResponse>({
     queryKey: ['bot-documents', page],
     queryFn: async () => {
-      const res = await api.get('/bot/documents', { params: { page } })
-      return res.data
+      const res = await api.get('/bot/documents')
+      // El backend devuelve { data: [...] } sin paginación; normalizamos a una sola página.
+      const list: BotDocument[] = res.data?.data ?? []
+      return { data: list, current_page: 1, last_page: 1, per_page: list.length, total: list.length, links: [] }
     },
     placeholderData: (prev) => prev,
     refetchInterval: (query) => {
