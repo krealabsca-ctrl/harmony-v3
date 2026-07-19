@@ -270,7 +270,10 @@ func UpdateCompany(c *gin.Context) {
 		}
 	}
 
-	database.SystemDB.Model(&company).Updates(updates)
+	if err := database.SystemDB.Model(&company).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al actualizar la empresa: " + err.Error()})
+		return
+	}
 	database.SystemDB.First(&company, c.Param("id"))
 	c.JSON(http.StatusOK, company)
 }

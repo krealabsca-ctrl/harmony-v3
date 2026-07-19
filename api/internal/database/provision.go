@@ -61,6 +61,36 @@ func ProvisionCompanyDB(companyID uint) (string, error) {
 	return dbName, nil
 }
 
+// RunSystemMigrations ejecuta los archivos SQL en migrations/system/ en orden numérico
+// sobre la base de datos del sistema (harmony_system). Se llama al arrancar. Todas las
+// migraciones del sistema deben ser idempotentes (IF NOT EXISTS) porque corren en cada
+// arranque sin tabla de control de versiones.
+func RunSystemMigrations(db *gorm.DB) error {
+	entries, err := fs.ReadDir(systemMigrations, "migrations/system")
+	if err != nil {
+		return nil
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) == ".sql" {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		data, err := systemMigrations.ReadFile("migrations/system/" + name)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", name, err)
+		}
+		if err := db.Exec(string(data)).Error; err != nil {
+			return fmt.Errorf("exec %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 // runCompanyMigrations ejecuta los archivos SQL en migrations/company/ en orden numérico
 func runCompanyMigrations(db *gorm.DB) error {
 	entries, err := fs.ReadDir(companyMigrations, "migrations/company")
