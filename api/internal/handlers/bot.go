@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -35,16 +38,36 @@ type BotConfig struct {
 func (BotConfig) TableName() string { return "bot_configs" }
 
 type BotDocument struct {
-	ID        uint      `gorm:"primarykey" json:"id"`
-	CompanyID uint      `json:"company_id"`
-	Name      string    `json:"name"`
-	AzurePath string    `json:"azure_path"`
-	MimeType  string    `json:"mime_type"`
-	Size      int64     `json:"size"`
-	CreatedAt time.Time `json:"created_at"`
+	ID            uint      `gorm:"primarykey" json:"id"`
+	CompanyID     uint      `json:"company_id"`
+	Name          string    `json:"name"`
+	OriginalName  string    `gorm:"column:original_name" json:"original_name"`
+	AzurePath     string    `gorm:"column:azure_path" json:"-"` // ruta local (columna reutilizada)
+	MimeType      string    `gorm:"column:mime_type" json:"mime_type"`
+	Size          int64     `json:"size"`
+	Status        string    `json:"status"`
+	ErrorMessage  string    `gorm:"column:error_message" json:"error_message"`
+	ExtractedText string    `gorm:"column:extracted_text" json:"-"` // nunca se expone en JSON
+	IsActive      bool      `gorm:"column:is_active" json:"is_active"`
+	DepartmentID  *uint     `gorm:"column:department_id" json:"department_id"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 func (BotDocument) TableName() string { return "bot_documents" }
+
+// BotDocumentResp es la forma que consume el frontend (incluye nombre de departamento).
+type BotDocumentResp struct {
+	ID             uint      `json:"id"`
+	Name           string    `json:"name"`
+	FileType       string    `json:"file_type"`
+	FileSize       int64     `json:"file_size"`
+	Status         string    `json:"status"`
+	IsActive       bool      `json:"is_active"`
+	DepartmentID   *uint     `json:"department_id"`
+	DepartmentName string    `json:"department_name"`
+	ErrorMessage   string    `json:"error_message"`
+	CreatedAt      time.Time `json:"created_at"`
+}
 
 // ── Tipos de respuesta ────────────────────────────────────────────────────────
 
@@ -300,20 +323,149 @@ func UpdateBotSettings(c *gin.Context) {
 
 func ListBotDocuments(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
-	docs := make([]BotDocument, 0)
-	db.Find(&docs)
-	c.JSON(http.StatusOK, gin.H{"data": docs})
+	companyID := c.GetUint("company_id")
+	resp := make([]BotDocumentResp, 0)
+	db.Table("bot_documents AS bd").
+		Select(`bd.id, bd.name, bd.mime_type AS file_type, bd.size AS file_size, bd.status,
+			bd.is_active, bd.department_id, COALESCE(d.name, '') AS department_name,
+			bd.error_message, bd.created_at`).
+		Joins("LEFT JOIN departments d ON d.id = bd.department_id").
+		Where("bd.company_id = ?", companyID).
+		Order("bd.created_at DESC").
+		Scan(&resp)
+	c.JSON(http.StatusOK, gin.H{"data": resp})
 }
 
+// extensiones de documento permitidas en la base de conocimiento.
+var allowedDocExt = map[string]bool{".txt": true, ".md": true, ".csv": true, ".docx": true, ".pdf": true}
+
 func UploadBotDocument(c *gin.Context) {
-	c.JSON(http.StatusCreated, gin.H{"message": "Documento recibido"})
+	db := c.MustGet("db").(*gorm.DB)
+	companyID := c.GetUint("company_id")
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "Archivo requerido"})
+		return
+	}
+	const maxDocBytes = 10 << 20 // 10 MB
+	if file.Size > maxDocBytes {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "El documento supera el límite de 10 MB"})
+		return
+	}
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	if !allowedDocExt[ext] {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "Formato no soportado. Usa TXT, MD, CSV, DOCX o PDF"})
+		return
+	}
+
+	name := strings.TrimSpace(c.PostForm("name"))
+	if name == "" {
+		name = file.Filename
+	}
+	var deptID *uint
+	if s := c.PostForm("department_id"); s != "" {
+		if v, e := strconv.ParseUint(s, 10, 64); e == nil && v > 0 {
+			u := uint(v)
+			deptID = &u
+		}
+	}
+
+	// Guardar el archivo en disco (uploads/company_{id}/bot/).
+	dir := fmt.Sprintf("uploads/company_%d/bot", companyID)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al crear directorio"})
+		return
+	}
+	savePath := filepath.Join(dir, fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), sanitizeFilename(name), ext))
+	if err := c.SaveUploadedFile(file, savePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al guardar el archivo"})
+		return
+	}
+
+	// Extraer el texto; si falla, el documento queda 'failed' pero se conserva el registro.
+	status, errMsg := "ready", ""
+	text, exErr := extractText(savePath, ext)
+	if exErr != nil {
+		status, errMsg = "failed", exErr.Error()
+	} else if strings.TrimSpace(text) == "" {
+		status, errMsg = "failed", "No se pudo extraer texto del documento"
+	}
+
+	doc := BotDocument{
+		CompanyID:     companyID,
+		Name:          name,
+		OriginalName:  file.Filename,
+		AzurePath:     savePath,
+		MimeType:      strings.TrimPrefix(ext, "."),
+		Size:          file.Size,
+		Status:        status,
+		ErrorMessage:  errMsg,
+		ExtractedText: text,
+		IsActive:      status == "ready",
+		DepartmentID:  deptID,
+	}
+	if err := db.Create(&doc).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al registrar el documento: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Documento cargado",
+		"data":    gin.H{"id": doc.ID, "status": status, "error_message": errMsg},
+	})
 }
 
 func DeleteBotDocument(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
-	id := c.Param("id")
-	db.Delete(&BotDocument{}, id)
+	companyID := c.GetUint("company_id")
+	var doc BotDocument
+	if err := db.Where("id = ? AND company_id = ?", c.Param("id"), companyID).First(&doc).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Documento no encontrado"})
+		return
+	}
+	if doc.AzurePath != "" {
+		os.Remove(doc.AzurePath) // borrar el archivo del disco (ignorar si ya no existe)
+	}
+	db.Delete(&BotDocument{}, doc.ID)
 	c.JSON(http.StatusNoContent, nil)
+}
+
+// ToggleBotDocumentActive activa/desactiva un documento en la base de conocimiento.
+func ToggleBotDocumentActive(c *gin.Context) {
+	db := c.MustGet("db").(*gorm.DB)
+	companyID := c.GetUint("company_id")
+	var doc BotDocument
+	if err := db.Where("id = ? AND company_id = ?", c.Param("id"), companyID).First(&doc).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Documento no encontrado"})
+		return
+	}
+	db.Model(&doc).Update("is_active", !doc.IsActive)
+	c.JSON(http.StatusOK, gin.H{"is_active": !doc.IsActive})
+}
+
+// sanitizeFilename deja solo caracteres seguros para nombre de archivo en disco.
+func sanitizeFilename(s string) string {
+	s = strings.ToLower(s)
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if len(out) > 40 {
+		out = out[:40]
+	}
+	if out == "" {
+		out = "doc"
+	}
+	return out
 }
 
 // ── Helpers JSON ──────────────────────────────────────────────────────────────
