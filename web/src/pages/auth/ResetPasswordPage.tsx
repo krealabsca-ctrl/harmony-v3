@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import api from '@/api/client'
+import AuthLayout from '@/components/layout/AuthLayout'
 
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams()
@@ -53,21 +54,8 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div
-            className="inline-flex w-16 h-16 rounded-2xl items-center justify-center text-white text-2xl font-bold mb-4"
-            style={{ backgroundColor: 'var(--color-primary)' }}
-          >
-            H
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Harmony</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Plataforma omnicanal</p>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-8">
+    <AuthLayout>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
           {success ? (
             <div className="flex flex-col items-center text-center py-2">
               <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
@@ -160,7 +148,6 @@ export default function ResetPasswordPage() {
             </>
           )}
         </div>
-      </div>
-    </div>
+    </AuthLayout>
   )
 }
