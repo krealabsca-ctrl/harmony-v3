@@ -18,9 +18,26 @@ import (
 	"time"
 
 	"harmony-api/internal/database"
+	"harmony-api/internal/models"
 
 	"github.com/gin-gonic/gin"
 )
+
+// getBrandingColors lee los colores globales guardados bajo la clave "branding".
+// Devuelve vacíos si no hay branding configurado.
+func getBrandingColors() (primary, secondary string) {
+	var s models.SystemSetting
+	if database.SystemDB.Where("key = ?", "branding").First(&s).Error != nil {
+		return "", ""
+	}
+	if v, ok := s.Value["primary_color"].(string); ok {
+		primary = v
+	}
+	if v, ok := s.Value["secondary_color"].(string); ok {
+		secondary = v
+	}
+	return primary, secondary
+}
 
 type SystemSetting struct {
 	ID        uint      `gorm:"primarykey"`
@@ -77,10 +94,14 @@ func GetSystemConfig(c *gin.Context) {
 		}
 	}
 
+	primaryColor, secondaryColor := getBrandingColors()
+
 	c.JSON(http.StatusOK, gin.H{
-		"app_name":    appName,
-		"favicon_url": faviconURL,
-		"logo_url":    logoURL,
+		"app_name":        appName,
+		"favicon_url":     faviconURL,
+		"logo_url":        logoURL,
+		"primary_color":   primaryColor,
+		"secondary_color": secondaryColor,
 	})
 }
 
