@@ -68,6 +68,31 @@ const defaultForm: CompanyForm = {
   retention_days: 0,
 }
 
+// copyToClipboard funciona también en contextos no seguros (HTTP), donde
+// navigator.clipboard no está disponible: cae en un textarea temporal + execCommand.
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* cae al fallback */ }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
+}
+
 function slugify(str: string): string {
   return str
     .toLowerCase()
@@ -607,7 +632,7 @@ export default function CompaniesPage() {
                   />
                   <button
                     type="button"
-                    onClick={() => navigator.clipboard?.writeText(adminCreds.email)}
+                    onClick={async () => { (await copyToClipboard(adminCreds.email)) ? toast.success('Correo copiado') : toast.error('No se pudo copiar') }}
                     className="text-xs px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
                     Copiar
@@ -624,7 +649,7 @@ export default function CompaniesPage() {
                   />
                   <button
                     type="button"
-                    onClick={() => navigator.clipboard?.writeText(adminCreds.password)}
+                    onClick={async () => { (await copyToClipboard(adminCreds.password)) ? toast.success('Contraseña copiada') : toast.error('No se pudo copiar') }}
                     className="text-xs px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
                     Copiar

@@ -2,16 +2,36 @@ package handlers
 
 import (
 	"crypto/rand"
+	"fmt"
+	"log"
 	"math/big"
 	"net/http"
 	"strings"
 
 	"harmony-api/internal/database"
 	"harmony-api/internal/models"
+	"harmony-api/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// sendAdminCredentialsEmail notifica al encargado sus credenciales de administrador.
+// Best-effort: si el SMTP no está configurado o falla, se registra y se continúa (las
+// credenciales igual se muestran en la UI una sola vez).
+func sendAdminCredentialsEmail(company *models.Company, password string) {
+	subject := "Acceso de administrador — " + company.Name
+	html := fmt.Sprintf(`
+		<p>Hola %s,</p>
+		<p>Se ha creado tu acceso de administrador para <strong>%s</strong>.</p>
+		<p><strong>Correo:</strong> %s<br>
+		<strong>Contraseña temporal:</strong> %s</p>
+		<p>Inicia sesión y cambia tu contraseña desde tu perfil lo antes posible.</p>`,
+		company.ContactName, company.Name, company.ContactEmail, password)
+	if err := services.Send(company.ContactEmail, subject, html); err != nil {
+		log.Printf("aviso: no se pudo enviar credenciales admin a %s: %v", company.ContactEmail, err)
+	}
+}
 
 // generateTempPassword genera una contraseña temporal legible (sin caracteres ambiguos)
 // usando crypto/rand. Se muestra una sola vez al superadmin al crear/restablecer el admin.
@@ -55,6 +75,8 @@ func provisionCompanyAdmin(company *models.Company) (string, error) {
 			"can_send_campaigns":     true,
 			"can_access_advertising": true,
 		})
+		co := *company
+		go sendAdminCredentialsEmail(&co, tempPassword)
 		return tempPassword, nil
 	}
 
@@ -71,6 +93,8 @@ func provisionCompanyAdmin(company *models.Company) (string, error) {
 	if err := db.Create(&admin).Error; err != nil {
 		return "", err
 	}
+	co := *company
+	go sendAdminCredentialsEmail(&co, tempPassword)
 	return tempPassword, nil
 }
 
@@ -158,8 +182,9 @@ func CreateCompany(c *gin.Context) {
 	}
 
 	if err := database.SystemDB.Create(&company).Error; err != nil {
-		// Detectar si es un error de slug duplicado
-		if strings.Contains(err.Error(), "companies_slug_key") {
+		// Detectar si es un error de slug duplicado (constraint antigua o índice parcial nuevo)
+		emsg := err.Error()
+		if strings.Contains(emsg, "companies_slug_key") || strings.Contains(emsg, "uq_companies_slug_active") {
 			c.JSON(http.StatusConflict, gin.H{"message": "El slug '" + input.Slug + "' ya existe. Por favor usa otro."})
 			return
 		}

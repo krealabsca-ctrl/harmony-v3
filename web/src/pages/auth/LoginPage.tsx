@@ -77,7 +77,7 @@ export default function LoginPage() {
               <img
                 src={systemConfig.logo_url}
                 alt="Logo"
-                className="w-16 h-16 rounded-2xl object-cover mb-4 shadow-sm"
+                className="w-16 h-16 rounded-2xl object-contain mb-4 shadow-sm"
               />
             ) : (
               <div
