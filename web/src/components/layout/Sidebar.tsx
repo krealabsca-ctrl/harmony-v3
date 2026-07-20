@@ -58,7 +58,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
           <img
             src={systemConfig.logo_url}
             alt="Logo"
-            className="w-9 h-9 rounded-xl object-contain flex-shrink-0"
+            className="w-9 h-9 rounded-xl flex-shrink-0"
           />
         ) : (
           <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/20 flex-shrink-0">

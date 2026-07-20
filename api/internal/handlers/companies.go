@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"crypto/rand"
-	"fmt"
 	"log"
 	"math/big"
 	"net/http"
 	"strings"
 
+	"harmony-api/internal/config"
 	"harmony-api/internal/database"
 	"harmony-api/internal/models"
 	"harmony-api/internal/services"
@@ -16,18 +16,100 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// sendAdminCredentialsEmail notifica al encargado sus credenciales de administrador.
-// Best-effort: si el SMTP no está configurado o falla, se registra y se continúa (las
-// credenciales igual se muestran en la UI una sola vez).
+// adminCredentialsEmailTmpl es la plantilla HTML (email-safe, con estilos inline y tablas)
+// del correo de credenciales. Se rellena con strings.NewReplacer para no lidiar con los
+// signos % de los anchos CSS en fmt.Sprintf.
+const adminCredentialsEmailTmpl = `<!doctype html>
+<html>
+<body style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:24px 0;">
+    <tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background-color:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;">
+        <!-- Header -->
+        <tr>
+          <td align="center" style="background:linear-gradient(135deg,{{PRIMARY}} 0%,{{SECONDARY}} 100%);background-color:{{PRIMARY}};padding:32px 24px;">
+            {{LOGO}}
+            <div style="color:#ffffff;font-size:20px;font-weight:700;">{{APP}}</div>
+          </td>
+        </tr>
+        <!-- Body -->
+        <tr>
+          <td style="padding:32px 32px 8px 32px;color:#111827;">
+            <p style="margin:0 0 16px;font-size:16px;">Hola <strong>{{NAME}}</strong>,</p>
+            <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#374151;">
+              Se creó tu acceso de <strong>administrador</strong> para <strong>{{COMPANY}}</strong>.
+              Usa estas credenciales para iniciar sesión:
+            </p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-left:4px solid {{PRIMARY}};border-radius:10px;margin:0 0 24px;">
+              <tr><td style="padding:16px 18px;">
+                <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Correo</div>
+                <div style="font-size:15px;font-family:Menlo,Consolas,monospace;color:#111827;margin-bottom:14px;">{{EMAIL}}</div>
+                <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Contraseña temporal</div>
+                <div style="font-size:18px;font-weight:700;font-family:Menlo,Consolas,monospace;color:{{PRIMARY}};letter-spacing:.02em;">{{PASSWORD}}</div>
+              </td></tr>
+            </table>
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+              <tr><td align="center" style="border-radius:10px;background-color:{{PRIMARY}};">
+                <a href="{{LOGIN}}" target="_blank" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:10px;">Iniciar sesión</a>
+              </td></tr>
+            </table>
+            <p style="margin:0 0 8px;font-size:13px;line-height:1.6;color:#6b7280;">
+              Por seguridad, cambia tu contraseña desde tu perfil después de iniciar sesión.
+              Si no esperabas este correo, ignóralo.
+            </p>
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td style="padding:20px 32px 28px;border-top:1px solid #f3f4f6;">
+            <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">{{APP}} · Este es un mensaje automático, no respondas a este correo.</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+
+// sendAdminCredentialsEmail notifica al encargado sus credenciales de administrador con un
+// correo HTML con la marca (logo del sistema + colores de la empresa). Best-effort: si el
+// SMTP no está configurado o falla, se registra y se continúa (las credenciales igual se
+// muestran en la UI una sola vez).
 func sendAdminCredentialsEmail(company *models.Company, password string) {
-	subject := "Acceso de administrador — " + company.Name
-	html := fmt.Sprintf(`
-		<p>Hola %s,</p>
-		<p>Se ha creado tu acceso de administrador para <strong>%s</strong>.</p>
-		<p><strong>Correo:</strong> %s<br>
-		<strong>Contraseña temporal:</strong> %s</p>
-		<p>Inicia sesión y cambia tu contraseña desde tu perfil lo antes posible.</p>`,
-		company.ContactName, company.Name, company.ContactEmail, password)
+	appName := getSystemSettingValue("app_name")
+	if appName == "" {
+		appName = "Harmony"
+	}
+	primary := company.PrimaryColor
+	if primary == "" {
+		primary = "#4F46E5"
+	}
+	secondary := company.SecondaryColor
+	if secondary == "" {
+		secondary = "#7C3AED"
+	}
+	base := strings.TrimRight(config.App.FrontendURL, "/")
+
+	// Logo del sistema (URL absoluta para que el cliente de correo pueda cargarlo).
+	logoHTML := ""
+	if logoPath := getSystemSettingValue("logo_path"); logoPath != "" {
+		logoURL := base + "/" + strings.TrimLeft(logoPath, "/")
+		logoHTML = `<img src="` + logoURL + `" alt="` + appName + `" width="52" height="52" style="display:block;margin:0 auto 12px;border-radius:12px;background:#ffffff;">`
+	}
+
+	html := strings.NewReplacer(
+		"{{PRIMARY}}", primary,
+		"{{SECONDARY}}", secondary,
+		"{{LOGO}}", logoHTML,
+		"{{APP}}", appName,
+		"{{NAME}}", company.ContactName,
+		"{{COMPANY}}", company.Name,
+		"{{EMAIL}}", company.ContactEmail,
+		"{{PASSWORD}}", password,
+		"{{LOGIN}}", base+"/login",
+	).Replace(adminCredentialsEmailTmpl)
+
+	subject := "Tu acceso de administrador en " + appName
 	if err := services.Send(company.ContactEmail, subject, html); err != nil {
 		log.Printf("aviso: no se pudo enviar credenciales admin a %s: %v", company.ContactEmail, err)
 	}
