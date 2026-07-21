@@ -6,6 +6,8 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"harmony-api/internal/config"
 	"harmony-api/internal/database"
@@ -14,6 +16,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+)
+
+// Guarda anti-duplicado del aviso de credenciales: evita enviar el mismo correo dos veces
+// ante un reintento de red o doble submit (el usuario reportó recibirlo 2 veces).
+var (
+	credEmailMu   sync.Mutex
+	credEmailSent = map[string]time.Time{}
 )
 
 // adminCredentialsEmailTmpl es la plantilla HTML (email-safe, con estilos inline y tablas)
@@ -76,6 +85,15 @@ const adminCredentialsEmailTmpl = `<!doctype html>
 // SMTP no está configurado o falla, se registra y se continúa (las credenciales igual se
 // muestran en la UI una sola vez).
 func sendAdminCredentialsEmail(company *models.Company, password string) {
+	// Dedupe: no reenviar el mismo aviso al mismo correo dentro de una ventana corta.
+	credEmailMu.Lock()
+	if last, ok := credEmailSent[company.ContactEmail]; ok && time.Since(last) < 2*time.Minute {
+		credEmailMu.Unlock()
+		return
+	}
+	credEmailSent[company.ContactEmail] = time.Now()
+	credEmailMu.Unlock()
+
 	appName := getSystemSettingValue("app_name")
 	if appName == "" {
 		appName = "Harmony"
