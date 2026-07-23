@@ -22,8 +22,9 @@ import (
 )
 
 type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	Email     string `json:"email" binding:"required,email"`
+	Password  string `json:"password" binding:"required"`
+	Recaptcha string `json:"recaptcha_token"`
 }
 
 // setAuthCookie establece el JWT en una cookie httpOnly (no accesible por JavaScript).
@@ -45,6 +46,12 @@ func Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "Datos inválidos", "errors": err.Error()})
+		return
+	}
+
+	// reCAPTCHA v3: si está configurado, validar antes de tocar la base de datos (anti-bot).
+	if !services.VerifyRecaptcha(req.Recaptcha, c.ClientIP()) {
+		c.JSON(http.StatusForbidden, gin.H{"message": "Verificación de seguridad fallida. Recarga la página e inténtalo de nuevo."})
 		return
 	}
 
@@ -283,10 +290,16 @@ func (passwordResetToken) TableName() string { return "password_reset_tokens" }
 // para no filtrar si un usuario está registrado.
 func ForgotPassword(c *gin.Context) {
 	var req struct {
-		Email string `json:"email" binding:"required,email"`
+		Email     string `json:"email" binding:"required,email"`
+		Recaptcha string `json:"recaptcha_token"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "Si el correo existe recibirás un enlace de recuperación."})
+		return
+	}
+
+	if !services.VerifyRecaptcha(req.Recaptcha, c.ClientIP()) {
+		c.JSON(http.StatusForbidden, gin.H{"message": "Verificación de seguridad fallida. Recarga la página e inténtalo de nuevo."})
 		return
 	}
 
@@ -373,11 +386,17 @@ func sendPasswordResetEmail(email, resetURL string) error {
 // ResetPassword valida el token y actualiza la contraseña del usuario.
 func ResetPassword(c *gin.Context) {
 	var req struct {
-		Token    string `json:"token" binding:"required"`
-		Password string `json:"password" binding:"required,min=8"`
+		Token     string `json:"token" binding:"required"`
+		Password  string `json:"password" binding:"required,min=8"`
+		Recaptcha string `json:"recaptcha_token"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "Datos inválidos", "errors": err.Error()})
+		return
+	}
+
+	if !services.VerifyRecaptcha(req.Recaptcha, c.ClientIP()) {
+		c.JSON(http.StatusForbidden, gin.H{"message": "Verificación de seguridad fallida. Recarga la página e inténtalo de nuevo."})
 		return
 	}
 

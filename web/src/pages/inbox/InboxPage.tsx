@@ -360,9 +360,12 @@ function AttachmentPreview({ att, out }: { att: Attachment; out: boolean }) {
   const isImage = att.mime_type.startsWith('image/')
   const isAudio = att.mime_type.startsWith('audio/')
   const isVideo = att.mime_type.startsWith('video/')
-  // Determina la URL final: usa la ruta absoluta si empieza con http, si no construye desde la base del API
-  const apiBase = (import.meta.env.VITE_API_URL ?? 'http://localhost:8080').replace('/api', '')
-  const url = att.azure_path.startsWith('http') ? att.azure_path : apiBase + att.azure_path
+  // URL del adjunto: si ya es absoluta (http) se usa tal cual; si no, se sirve del MISMO
+  // origen (nginx expone /uploads), así funciona bajo cualquier dominio o protocolo (http/https)
+  // sin depender de una base clavada. Se garantiza el "/" inicial para que sea absoluta al host.
+  const url = att.azure_path.startsWith('http')
+    ? att.azure_path
+    : att.azure_path.startsWith('/') ? att.azure_path : '/' + att.azure_path
 
   if (isImage) return (
     <a href={url} target="_blank" rel="noopener noreferrer" className="block mt-1">

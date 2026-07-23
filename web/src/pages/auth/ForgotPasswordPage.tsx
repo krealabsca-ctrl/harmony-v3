@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import api from '@/api/client'
 import AuthLayout from '@/components/layout/AuthLayout'
+import { getRecaptchaToken } from '@/lib/recaptcha'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -9,12 +11,18 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState('')
   const [sent, setSent] = useState(false)
 
+  const { data: systemConfig } = useQuery({
+    queryKey: ['system-config'],
+    queryFn: async () => (await api.get('/system-config')).data,
+  })
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      await api.post('/auth/forgot-password', { email })
+      const recaptchaToken = await getRecaptchaToken(systemConfig?.recaptcha_site_key, 'forgot_password')
+      await api.post('/auth/forgot-password', { email, recaptcha_token: recaptchaToken })
       setSent(true)
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string }; status?: number }; message?: string }

@@ -11,14 +11,16 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		c.Header("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		// Nota: se permiten los dominios de Google reCAPTCHA v3 (script/frame/connect).
 		c.Header("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' 'unsafe-inline'; "+
+				"script-src 'self' 'unsafe-inline' https://www.google.com https://www.gstatic.com; "+
 				"style-src 'self' 'unsafe-inline'; "+
 				"img-src 'self' data: blob:; "+
 				"font-src 'self' data:; "+
-				"connect-src 'self' wss:; "+
+				"connect-src 'self' wss: https://www.google.com; "+
 				"media-src 'self' blob:; "+
+				"frame-src https://www.google.com; "+
 				"object-src 'none'; "+
 				"frame-ancestors 'none'")
 		c.Next()
