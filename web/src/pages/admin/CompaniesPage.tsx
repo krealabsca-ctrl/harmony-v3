@@ -126,8 +126,10 @@ export default function CompaniesPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [deletingName, setDeletingName] = useState('')
 
-  // Modal de credenciales del admin (se muestra una sola vez tras crear/restablecer)
-  const [adminCreds, setAdminCreds] = useState<{ company: string; email: string; password: string } | null>(null)
+  // Modal de acceso admin: muestra el correo (login). La contraseña solo aparece cuando se
+  // acaba de crear la empresa o cuando se restablece explícitamente (no se puede "ver" un
+  // hash bcrypt). password undefined = solo vista; con valor = recién generada.
+  const [adminModal, setAdminModal] = useState<{ companyId: number; company: string; email: string; password?: string } | null>(null)
 
   const { data, isLoading } = useQuery<PaginatedResponse>({
     queryKey: ['companies', search, page],
@@ -148,10 +150,10 @@ export default function CompaniesPage() {
       setShowCreateModal(false)
       setCreateForm(defaultForm)
       setSlugManuallyEdited(false)
-      // Mostrar las credenciales del admin recién creado (una sola vez).
+      // Mostrar las credenciales del admin recién creado (una sola vez, también van por correo).
       const d = res?.data
       if (d?.admin_password) {
-        setAdminCreds({ company: d.name, email: d.admin_email, password: d.admin_password })
+        setAdminModal({ companyId: d.id, company: d.name, email: d.admin_email, password: d.admin_password })
       }
     },
     onError: (err: any) => {
@@ -160,16 +162,29 @@ export default function CompaniesPage() {
     },
   })
 
-  const resetAdminMutation = useMutation({
+  // Ver acceso admin: solo consulta el correo (login). NO regenera contraseña ni envía correo.
+  const viewAdminMutation = useMutation({
     mutationFn: (company: Company) =>
-      api.post(`/admin/companies/${company.id}/reset-admin`).then(res => ({ res, company })),
+      api.get(`/admin/companies/${company.id}/admin`).then(res => ({ res, company })),
     onSuccess: ({ res, company }) => {
       const d = res?.data
-      setAdminCreds({ company: company.name, email: d.admin_email, password: d.admin_password })
+      setAdminModal({ companyId: company.id, company: company.name, email: d.admin_email, password: undefined })
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message || 'Error al generar el acceso admin.'
-      toast.error(msg)
+      toast.error(err?.response?.data?.message || 'Error al consultar el acceso admin.')
+    },
+  })
+
+  // Restablecer contraseña: acción EXPLÍCITA. Regenera la contraseña y la envía por correo.
+  const resetAdminMutation = useMutation({
+    mutationFn: (companyId: number) =>
+      api.post(`/admin/companies/${companyId}/reset-admin`).then(res => res.data),
+    onSuccess: (d) => {
+      setAdminModal(prev => prev ? { ...prev, email: d.admin_email, password: d.admin_password } : prev)
+      toast.success('Contraseña restablecida y enviada por correo.')
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Error al restablecer la contraseña.')
     },
   })
 
@@ -484,9 +499,9 @@ export default function CompaniesPage() {
                     <td className="px-5 py-3 text-right">
                       <div className="flex justify-end gap-2">
                         <button
-                          onClick={() => resetAdminMutation.mutate(company)}
-                          disabled={resetAdminMutation.isPending}
-                          title="Crear o restablecer el usuario admin de la empresa (login = correo del encargado)"
+                          onClick={() => viewAdminMutation.mutate(company)}
+                          disabled={viewAdminMutation.isPending}
+                          title="Ver el usuario admin de la empresa (login = correo del encargado)"
                           className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded-lg px-2.5 py-1 hover:bg-indigo-50 transition-colors disabled:opacity-50"
                         >
                           Acceso admin
@@ -612,14 +627,13 @@ export default function CompaniesPage() {
         </div>
       )}
 
-      {/* ─── Modal: Credenciales del admin (una sola vez) ─── */}
-      {adminCreds && (
+      {/* ─── Modal: Acceso de administrador ─── */}
+      {adminModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-md w-full shadow-xl">
             <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-1">Acceso de administrador</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Credenciales para <span className="font-medium text-gray-800 dark:text-gray-200">{adminCreds.company}</span>.
-              Cópialas ahora: la contraseña <strong>no se volverá a mostrar</strong>.
+              Empresa <span className="font-medium text-gray-800 dark:text-gray-200">{adminModal.company}</span>.
             </p>
             <div className="space-y-3">
               <div>
@@ -627,46 +641,64 @@ export default function CompaniesPage() {
                 <div className="flex items-center gap-2">
                   <input
                     readOnly
-                    value={adminCreds.email}
+                    value={adminModal.email}
                     className="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-3 py-2 text-sm font-mono"
                   />
                   <button
                     type="button"
-                    onClick={async () => { (await copyToClipboard(adminCreds.email)) ? toast.success('Correo copiado') : toast.error('No se pudo copiar') }}
+                    onClick={async () => { (await copyToClipboard(adminModal.email)) ? toast.success('Correo copiado') : toast.error('No se pudo copiar') }}
                     className="text-xs px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
                     Copiar
                   </button>
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Contraseña temporal</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    readOnly
-                    value={adminCreds.password}
-                    className="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-3 py-2 text-sm font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={async () => { (await copyToClipboard(adminCreds.password)) ? toast.success('Contraseña copiada') : toast.error('No se pudo copiar') }}
-                    className="text-xs px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    Copiar
-                  </button>
+
+              {adminModal.password ? (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Contraseña temporal</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={adminModal.password}
+                      className="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-3 py-2 text-sm font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => { (await copyToClipboard(adminModal.password!)) ? toast.success('Contraseña copiada') : toast.error('No se pudo copiar') }}
+                      className="text-xs px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      Copiar
+                    </button>
+                  </div>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                    Cópiala ahora: por seguridad <strong>no se volverá a mostrar</strong>. También se envió al correo del encargado.
+                  </p>
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 px-3 py-2.5">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    La contraseña se generó y se envió por correo al crear la empresa. No se puede volver a mostrar (se guarda cifrada).
+                    Si se perdió, restablécela abajo.
+                  </p>
+                </div>
+              )}
             </div>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
-              El administrador debe iniciar sesión con estas credenciales y cambiar la contraseña desde su perfil.
-            </p>
-            <div className="flex justify-end mt-5">
+
+            <div className="flex items-center justify-between gap-3 mt-5">
               <button
-                onClick={() => setAdminCreds(null)}
+                onClick={() => resetAdminMutation.mutate(adminModal.companyId)}
+                disabled={resetAdminMutation.isPending}
+                className="text-sm px-4 py-2 rounded-xl border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 transition-colors disabled:opacity-50"
+              >
+                {resetAdminMutation.isPending ? 'Restableciendo…' : 'Restablecer contraseña'}
+              </button>
+              <button
+                onClick={() => setAdminModal(null)}
                 className="px-5 py-2 rounded-xl text-white text-sm font-medium"
                 style={{ backgroundColor: 'var(--color-primary)' }}
               >
-                Entendido
+                Cerrar
               </button>
             </div>
           </div>
