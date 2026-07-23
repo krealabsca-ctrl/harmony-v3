@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import api from '@/api/client'
 import AuthLayout from '@/components/layout/AuthLayout'
+import { getRecaptchaToken } from '@/lib/recaptcha'
 
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams()
@@ -14,6 +16,11 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+
+  const { data: systemConfig } = useQuery({
+    queryKey: ['system-config'],
+    queryFn: async () => (await api.get('/system-config')).data,
+  })
 
   useEffect(() => {
     if (success) {
@@ -37,11 +44,13 @@ export default function ResetPasswordPage() {
 
     setLoading(true)
     try {
+      const recaptchaToken = await getRecaptchaToken(systemConfig?.recaptcha_site_key, 'reset_password')
       await api.post('/auth/reset-password', {
         token,
         email,
         password,
         password_confirmation: passwordConfirmation,
+        recaptcha_token: recaptchaToken,
       })
       setSuccess(true)
     } catch (err: unknown) {

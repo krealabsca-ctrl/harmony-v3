@@ -29,6 +29,10 @@ type Config struct {
 	AzureKey       string
 	AzureConnStr   string
 	AnthropicKey   string
+	// reCAPTCHA v3: la site key es pública (se expone al frontend vía /system-config);
+	// la secret NUNCA sale del servidor. Si ambas están vacías, reCAPTCHA queda desactivado.
+	RecaptchaSiteKey string
+	RecaptchaSecret  string
 }
 
 var App *Config
@@ -71,6 +75,8 @@ func Load() {
 		AzureKey:       getEnv("AZURE_STORAGE_KEY", ""),
 		AzureConnStr:   getEnv("AZURE_STORAGE_CONNECTION_STRING", ""),
 		AnthropicKey:   getEnv("ANTHROPIC_API_KEY", ""),
+		RecaptchaSiteKey: getEnv("RECAPTCHA_SITE_KEY", ""),
+		RecaptchaSecret:  getEnv("RECAPTCHA_SECRET", ""),
 	}
 }
 

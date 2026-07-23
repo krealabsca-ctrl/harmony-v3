@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/authStore'
 import api from '@/api/client'
+import { getRecaptchaToken } from '@/lib/recaptcha'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -51,7 +52,8 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      const { data } = await api.post('/auth/login', { email, password, remember })
+      const recaptchaToken = await getRecaptchaToken(systemConfig?.recaptcha_site_key, 'login')
+      const { data } = await api.post('/auth/login', { email, password, remember, recaptcha_token: recaptchaToken })
       // M-09: el token viaja en cookie httpOnly; solo guardamos el user en el store.
       setAuth(data.user)
       const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/'

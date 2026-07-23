@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"harmony-api/internal/config"
 	"harmony-api/internal/database"
 	"harmony-api/internal/models"
 
@@ -97,11 +98,12 @@ func GetSystemConfig(c *gin.Context) {
 	primaryColor, secondaryColor := getBrandingColors()
 
 	c.JSON(http.StatusOK, gin.H{
-		"app_name":        appName,
-		"favicon_url":     faviconURL,
-		"logo_url":        logoURL,
-		"primary_color":   primaryColor,
-		"secondary_color": secondaryColor,
+		"app_name":            appName,
+		"favicon_url":         faviconURL,
+		"logo_url":            logoURL,
+		"primary_color":       primaryColor,
+		"secondary_color":     secondaryColor,
+		"recaptcha_site_key":  config.App.RecaptchaSiteKey,
 	})
 }
 
