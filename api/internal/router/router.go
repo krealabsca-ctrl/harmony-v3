@@ -144,6 +144,7 @@ func Setup() *gin.Engine {
 			sa.POST("/admin/companies", handlers.CreateCompany)
 			sa.PUT("/admin/companies/:id", handlers.UpdateCompany)
 			sa.DELETE("/admin/companies/:id", handlers.DeleteCompany)
+			sa.GET("/admin/companies/:id/admin", handlers.GetCompanyAdmin)
 			sa.POST("/admin/companies/:id/reset-admin", handlers.ResetCompanyAdmin)
 			sa.GET("/admin/system-settings", handlers.GetSystemSettings)
 			sa.PUT("/admin/system-settings", handlers.UpdateSystemSettings)

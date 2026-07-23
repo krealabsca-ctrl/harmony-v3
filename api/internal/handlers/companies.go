@@ -374,6 +374,33 @@ func ResetCompanyAdmin(c *gin.Context) {
 	})
 }
 
+// GetCompanyAdmin devuelve el usuario admin (solo el correo/login) de una empresa, SIN
+// regenerar la contraseña ni enviar correo. La contraseña se guarda hasheada (no se puede
+// mostrar); para obtener una nueva hay que restablecerla explícitamente (ResetCompanyAdmin).
+//
+// Responde a: GET /admin/companies/:id/admin
+func GetCompanyAdmin(c *gin.Context) {
+	var company models.Company
+	if err := database.SystemDB.First(&company, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Empresa no encontrada"})
+		return
+	}
+
+	hasUser := false
+	if company.DBName != "" && strings.TrimSpace(company.ContactEmail) != "" {
+		if db, err := database.GetCompanyDB(company.ID, company.DBName); err == nil {
+			var count int64
+			db.Table("users").Where("email = ? AND deleted_at IS NULL", company.ContactEmail).Count(&count)
+			hasUser = count > 0
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"admin_email": company.ContactEmail,
+		"has_user":    hasUser,
+	})
+}
+
 // UpdateCompany actualiza los datos de una empresa
 func UpdateCompany(c *gin.Context) {
 	var company models.Company
