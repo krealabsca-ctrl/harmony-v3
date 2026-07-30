@@ -161,7 +161,11 @@ func UpdateUser(c *gin.Context) {
 	if req.Email != "" {
 		updates["email"] = req.Email
 	}
-	if req.Role != "" {
+	// El rol solo se procesa si viene Y realmente cambia respecto al actual. El
+	// frontend envía siempre el rol vigente al editar, así que comparar contra el
+	// rol actual evita bloquear una edición normal (nombre, contraseña, etc.) de la
+	// propia cuenta. La protección solo debe impedir CAMBIAR el rol propio.
+	if req.Role != "" && req.Role != string(user.Role) {
 		// FIX: whitelist + no se puede cambiar el propio rol
 		if !allowedRoles[req.Role] {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "Rol no válido"})
