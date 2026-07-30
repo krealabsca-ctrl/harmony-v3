@@ -681,11 +681,9 @@ function BulkReassignModal({ agents, onClose, onConfirm }: {
 }) {
   const [fromId, setFromId] = useState<number | null>(null)
   const [toId, setToId] = useState<number | null>(null)
-  const [statuses, setStatuses] = useState<string[]>(['open', 'pending'])
-
-  /* Alterna la selección de un estado: si ya está seleccionado lo quita, si no lo agrega */
-  const toggleStatus = (s: string) =>
-    setStatuses(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
+  // Siempre se reasignan las conversaciones activas. Se incluye 'pending' porque
+  // para el usuario no es un estado aparte: es una conversación abierta sin agente.
+  const statuses = ['open', 'pending']
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md">
@@ -710,21 +708,14 @@ function BulkReassignModal({ agents, onClose, onConfirm }: {
               {agents.map(a => <option key={a.id} value={a.id}>{a.is_online ? '🟢' : '⚫'} {a.name}</option>)}
             </select>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Estados</label>
-            <div className="flex gap-3">
-              {(['open', 'pending'] as const).map(s => (
-                <label key={s} className="flex items-center gap-1.5 cursor-pointer text-gray-700 dark:text-gray-300">
-                  <input type="checkbox" checked={statuses.includes(s)} onChange={() => toggleStatus(s)} className="rounded" />
-                  <span className="text-sm">{s === 'open' ? 'Abiertos' : 'Pendientes'}</span>
-                </label>
-              ))}
-            </div>
-          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Se reasignarán todas las conversaciones activas (abiertas y no leídas) del agente seleccionado.
+            Las conversaciones cerradas no se modifican.
+          </p>
         </div>
         <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 dark:border-gray-700">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Cancelar</button>
-          <button onClick={() => toId && onConfirm(fromId, toId, statuses)} disabled={!toId || statuses.length === 0}
+          <button onClick={() => toId && onConfirm(fromId, toId, statuses)} disabled={!toId}
             className="px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             Reasignar
@@ -1560,12 +1551,14 @@ export default function InboxPage() {
                       {conv.channel.name}
                     </span>
                   )}
+                  {/* Solo dos estados visibles: Abierto (activa) y Cerrado.
+                      'pending' se muestra como Abierto, igual que en la lista. */}
                   <span className={`text-[10px] px-1.5 py-0 rounded font-medium ${
-                    conv.status === 'open'
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                      : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                    conv.status === 'closed'
+                      ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                      : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                   }`}>
-                    {conv.status === 'open' ? 'Abierto' : 'Pendiente'}
+                    {conv.status === 'closed' ? 'Cerrado' : 'Abierto'}
                   </span>
                   {conv.agent && (
                     <span className="text-[10px] text-gray-500 dark:text-gray-400">👤 {conv.agent.name}</span>

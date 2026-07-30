@@ -44,6 +44,34 @@ interface ChannelsResponse {
   total?: number
 }
 
+// ─── Diagnóstico de canal ─────────────────────────────────────────────────────
+
+type CheckStatus = 'ok' | 'warn' | 'error'
+
+interface ChannelCheck {
+  key: string
+  label: string
+  status: CheckStatus
+  detail: string
+}
+
+interface ChannelTestResult {
+  overall: CheckStatus
+  checks: ChannelCheck[]
+}
+
+const CHECK_STYLE: Record<CheckStatus, { bg: string; border: string; text: string; icon: string; label: string }> = {
+  ok: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', icon: '✓', label: 'Correcto' },
+  warn: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', icon: '!', label: 'Revisar' },
+  error: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: '✕', label: 'Error' },
+}
+
+const OVERALL_TEXT: Record<CheckStatus, string> = {
+  ok: 'El canal está correctamente configurado.',
+  warn: 'El canal funciona, pero hay puntos por revisar.',
+  error: 'El canal tiene problemas que impiden su operación.',
+}
+
 interface ChannelFormData {
   name: string
   type: ChannelType
@@ -57,6 +85,9 @@ interface ChannelFormData {
   access_token: string
   page_id: string
   bot_token: string
+  // Secreto del webhook. En canales de Meta debe ser el App Secret de la app,
+  // porque es la clave con la que Meta firma cada notificación entrante.
+  webhook_secret: string
 }
 
 // ─── Brand config ─────────────────────────────────────────────────────────────
@@ -214,6 +245,7 @@ const emptyForm: ChannelFormData = {
   access_token: '',
   page_id: '',
   bot_token: '',
+  webhook_secret: '',
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -233,6 +265,10 @@ export default function ChannelsPage() {
   const [simulatedId, setSimulatedId] = useState<number | null>(null)
   const [simulatingId, setSimulatingId] = useState<number | null>(null)
   const [copiedId, setCopiedId] = useState<number | null>(null)
+
+  // Diagnóstico: canal en curso y resultado por canal
+  const [testingId, setTestingId] = useState<number | null>(null)
+  const [testResults, setTestResults] = useState<Record<number, ChannelTestResult>>({})
 
   // webhook display after creation
   const [createdWebhookUrl, setCreatedWebhookUrl] = useState<string | null>(null)
@@ -337,6 +373,23 @@ export default function ChannelsPage() {
     },
   })
 
+  /** Diagnóstico del canal: consulta a la plataforma y comprueba el webhook. */
+  const testMutation = useMutation({
+    mutationFn: (id: number) =>
+      api.post<ChannelTestResult>(`/channels/${id}/test`).then(r => r.data),
+    onSuccess: (result, id) => {
+      setTestResults(prev => ({ ...prev, [id]: result }))
+      setTestingId(null)
+      if (result.overall === 'ok') toast.success('El canal está correctamente configurado')
+      else if (result.overall === 'warn') toast('Diagnóstico con advertencias', { icon: '⚠️' })
+      else toast.error('El canal tiene problemas de configuración')
+    },
+    onError: () => {
+      setTestingId(null)
+      toast.error('No se pudo ejecutar el diagnóstico')
+    },
+  })
+
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const openCreate = useCallback(() => {
@@ -363,6 +416,7 @@ export default function ChannelsPage() {
       access_token: '',
       page_id: '',
       bot_token: '',
+      webhook_secret: '',
     })
     setFormErrors({})
     setCreatedWebhookUrl(null)
@@ -426,6 +480,9 @@ export default function ChannelsPage() {
       identifier: form.identifier,
       is_active: form.is_active,
       credentials,
+      // Se envía solo si el usuario escribió algo: en edición, un campo vacío
+      // significa "conservar el secreto actual", no borrarlo.
+      ...(form.webhook_secret.trim() ? { webhook_secret: form.webhook_secret.trim() } : {}),
     }
 
     if (editingChannel) {
@@ -636,6 +693,58 @@ export default function ChannelsPage() {
                     Eliminar
                   </button>
                 </div>
+
+                {/* Diagnóstico del canal */}
+                <button
+                  onClick={() => { setTestingId(channel.id); testMutation.mutate(channel.id) }}
+                  disabled={testingId === channel.id}
+                  className="w-full mb-2 py-2 border rounded-xl text-xs font-medium transition-colors flex items-center justify-center gap-1.5 border-indigo-200 text-indigo-600 hover:bg-indigo-50 disabled:opacity-60"
+                >
+                  {testingId === channel.id ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin" />
+                      Probando canal...
+                    </>
+                  ) : (
+                    '🔍 Probar canal'
+                  )}
+                </button>
+
+                {/* Resultado del diagnóstico */}
+                {testResults[channel.id] && (
+                  <div className="mb-2 space-y-1.5">
+                    <div className={`px-3 py-2 rounded-xl border text-xs font-medium ${
+                      CHECK_STYLE[testResults[channel.id].overall].bg
+                    } ${CHECK_STYLE[testResults[channel.id].overall].border} ${
+                      CHECK_STYLE[testResults[channel.id].overall].text
+                    }`}>
+                      {CHECK_STYLE[testResults[channel.id].overall].icon}{' '}
+                      {OVERALL_TEXT[testResults[channel.id].overall]}
+                    </div>
+                    {testResults[channel.id].checks.map(chk => (
+                      <div
+                        key={chk.key}
+                        className={`px-3 py-2 rounded-lg border text-[11px] ${CHECK_STYLE[chk.status].bg} ${CHECK_STYLE[chk.status].border}`}
+                      >
+                        <div className={`font-semibold flex items-center gap-1.5 ${CHECK_STYLE[chk.status].text}`}>
+                          <span>{CHECK_STYLE[chk.status].icon}</span>
+                          <span>{chk.label}</span>
+                        </div>
+                        <p className="text-gray-600 mt-0.5 leading-snug break-words">{chk.detail}</p>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setTestResults(prev => {
+                        const next = { ...prev }
+                        delete next[channel.id]
+                        return next
+                      })}
+                      className="w-full text-[11px] text-gray-400 hover:text-gray-600 py-1"
+                    >
+                      Ocultar resultado
+                    </button>
+                  </div>
+                )}
 
                 {/* Simulate */}
                 <button
@@ -1103,6 +1212,33 @@ export default function ChannelsPage() {
                             </svg>
                             <p className="text-xs text-sky-700">
                               Al guardar, Harmony registrará automáticamente el webhook en Telegram.
+                            </p>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Secreto del webhook. En los canales de Meta DEBE ser el App
+                          Secret de la app: es la clave con la que Meta firma cada
+                          notificación y con la que Harmony valida que sea auténtica. */}
+                      {form.type !== 'telegram' && (
+                        <>
+                          <PasswordField
+                            label="App Secret (secreto del webhook)"
+                            hint="Configuración de la app en Meta → Básica → Clave secreta de la aplicación"
+                            name="webhook_secret"
+                            value={form.webhook_secret}
+                            onChange={handleFormChange}
+                            isConfigured={!!editingChannel?.webhook_secret}
+                            type={form.type}
+                          />
+                          <div className="flex items-start gap-2 mt-1 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                            <svg className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <p className="text-xs text-amber-700">
+                              Este mismo valor se usa como <strong>Token de verificación</strong> al configurar el
+                              webhook en Meta. Si no coincide con el App Secret, Meta confirmará el webhook pero los
+                              mensajes entrantes se descartarán por firma inválida.
                             </p>
                           </div>
                         </>

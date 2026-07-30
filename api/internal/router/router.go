@@ -269,6 +269,8 @@ func Setup() *gin.Engine {
 				adm.DELETE("/channels/:id", handlers.DeleteChannel)
 				// Simula un mensaje entrante para pruebas de integración
 				adm.POST("/channels/:id/simulate-inbound", handlers.SimulateInbound)
+				// Diagnóstico del canal: valida credenciales, token, webhook y suscripción
+				adm.POST("/channels/:id/test", handlers.TestChannel)
 				// Configuración del bot de IA (respuestas automáticas y documentos de contexto)
 				adm.GET("/bot/settings", handlers.GetBotSettings)
 				adm.PUT("/bot/settings", handlers.UpdateBotSettings)
