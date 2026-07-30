@@ -84,9 +84,12 @@ func ListConversations(c *gin.Context) {
 
 	switch status {
 	case "open":
-		// "Abiertos" = open Y ya leídas (unread_count = 0)
+		// "Abiertos" = toda conversación activa ya leída (unread_count = 0).
+		// Incluye 'pending' a propósito: para el usuario solo existen dos estados,
+		// Abiertos y No leídos. 'pending' es un detalle interno (aún sin agente
+		// asignado) y no se presenta como un estado aparte en la interfaz.
 		// Separar "open" de "unread" evita duplicar conversaciones en la UI del inbox
-		base = base.Where("conversations.status = 'open' AND conversations.unread_count = 0")
+		base = base.Where("conversations.status IN ('open','pending') AND conversations.unread_count = 0")
 	case "unread":
 		// "No leídos" = open + pending con mensajes sin leer
 		// Incluye pending porque un mensaje entrante en pendiente también es "no leído"
@@ -132,17 +135,23 @@ func ListConversations(c *gin.Context) {
 		return d
 	}
 
-	// all = todas las abiertas (solo status open), para el tab "Todos"
-	db.Model(&models.Conversation{}).Scopes(agentFilter).
-		Where("status = 'open'").Count(&allCount)
+	// IMPORTANTE: cada contador debe usar EXACTAMENTE el mismo criterio que el
+	// filtro de listado de su pestaña (ver el switch de arriba). Antes los tres
+	// contaban solo status='open', por lo que las conversaciones en 'pending'
+	// (el estado con que nacen las que llegan por webhook y aún no tienen agente)
+	// se listaban en la bandeja pero los badges mostraban 0.
 
-	// open = abiertas ya leídas (sin mensajes pendientes de leer)
+	// all = open + pending, igual que el listado por defecto
 	db.Model(&models.Conversation{}).Scopes(agentFilter).
-		Where("status = 'open' AND unread_count = 0").Count(&openCount)
+		Where("status IN ('open','pending')").Count(&allCount)
 
-	// unread = abiertas con mensajes no leídos
+	// open = activas ya leídas (incluye 'pending', igual que el listado del tab)
 	db.Model(&models.Conversation{}).Scopes(agentFilter).
-		Where("status = 'open' AND unread_count > 0").Count(&unreadCount)
+		Where("status IN ('open','pending') AND unread_count = 0").Count(&openCount)
+
+	// unread = open + pending con mensajes sin leer
+	db.Model(&models.Conversation{}).Scopes(agentFilter).
+		Where("status IN ('open','pending') AND unread_count > 0").Count(&unreadCount)
 
 	c.JSON(http.StatusOK, gin.H{
 		"data":  convs,
