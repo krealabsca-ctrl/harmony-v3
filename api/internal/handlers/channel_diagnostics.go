@@ -13,6 +13,9 @@ package handlers
 // mensajes ni modifican la configuración en la plataforma externa.
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -236,6 +239,38 @@ func diagnoseWhatsApp(ch models.Channel) []channelCheck {
 		// Meta no siempre expone este campo (p. ej. números de prueba): no es un problema.
 	default:
 		out = append(out, channelCheck{"quality", "Calidad del número", checkOK, "Calificación: " + q})
+	}
+
+	// ¿El secreto del webhook es realmente el App Secret de la app?
+	//
+	// Esta es la falla más difícil de detectar: si se registró un texto inventado
+	// como token de verificación (en Harmony y en Meta), la verificación del
+	// webhook funciona —porque solo compara cadenas— pero Meta firma cada
+	// notificación con el App Secret real, así que la firma nunca valida y todos
+	// los mensajes entrantes se descartan en silencio.
+	//
+	// Se comprueba con appsecret_proof: un HMAC-SHA256 del access token usando el
+	// App Secret como clave. Si el valor guardado no es el App Secret correcto,
+	// Meta rechaza la llamada.
+	if ch.WebhookSecret != "" {
+		mac := hmac.New(sha256.New, []byte(ch.WebhookSecret))
+		mac.Write([]byte(token))
+		proof := hex.EncodeToString(mac.Sum(nil))
+
+		if _, proofErr := graphGet(phoneID, token, map[string]string{
+			"fields":          "id",
+			"appsecret_proof": proof,
+		}); proofErr != nil {
+			out = append(out, channelCheck{"app_secret", "El secreto del webhook es el App Secret", checkError,
+				"El valor guardado como secreto del webhook NO es el App Secret de la aplicación de Meta. " +
+					"La verificación del webhook igual funciona (solo compara texto), pero Meta firma cada mensaje " +
+					"entrante con el App Secret real, por lo que la firma no valida y los mensajes se descartan en " +
+					"silencio. Copie el App Secret desde Configuración de la app → Básica, regístrelo en Canales → " +
+					"Editar y úselo también como token de verificación en Meta. (Detalle: " + proofErr.Error() + ")"})
+		} else {
+			out = append(out, channelCheck{"app_secret", "El secreto del webhook es el App Secret", checkOK,
+				"El secreto guardado coincide con el App Secret de la aplicación: las firmas de los mensajes entrantes validarán correctamente."})
+		}
 	}
 
 	// Suscripción de la app a la WABA: sin esto Meta no entrega los mensajes
