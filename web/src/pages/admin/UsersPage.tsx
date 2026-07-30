@@ -151,7 +151,7 @@ export default function UsersPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['admin-users'] })
 
   const createMutation = useMutation({
-    mutationFn: (data: UserFormData) => api.post('/admin/users', data),
+    mutationFn: (data: Record<string, unknown>) => api.post('/admin/users', data),
     onSuccess: () => {
       toast.success('Usuario creado correctamente')
       closeModal()
@@ -165,7 +165,7 @@ export default function UsersPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<UserFormData> }) =>
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
       api.put(`/admin/users/${id}`, data),
     onSuccess: () => {
       toast.success('Usuario actualizado correctamente')
@@ -249,12 +249,19 @@ export default function UsersPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    // El <select> entrega department_id como string ("" cuando no hay departamento);
+    // el backend lo espera como número (*uint) o null. Sin esta conversión el
+    // JSON llega con un string y el backend responde 422 (cannot unmarshal string
+    // into Go struct field .department_id of type uint).
+    const payload: Record<string, unknown> = {
+      ...form,
+      department_id: form.department_id ? Number(form.department_id) : null,
+    }
     if (editingUser) {
-      const payload: Partial<UserFormData> = { ...form }
       if (!payload.password) delete payload.password
       updateMutation.mutate({ id: editingUser.id, data: payload })
     } else {
-      createMutation.mutate(form)
+      createMutation.mutate(payload)
     }
   }
 
