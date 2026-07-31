@@ -122,12 +122,20 @@ func Login(c *gin.Context) {
 	})
 }
 
-// Logout marca al usuario como offline
+// Logout marca al usuario como offline.
+//
+// Mismo problema que Heartbeat: esta ruta no tiene CompanyDB() en el grupo de
+// router.go, así que c.Get("db") nunca existía y esto nunca se ejecutaba.
 func Logout(c *gin.Context) {
-	if db, exists := c.Get("db"); exists {
-		userID, _ := c.Get("user_id")
-		db.(*gorm.DB).Model(&models.User{}).Where("id = ?", userID).
-			Updates(map[string]any{"is_online": false, "last_seen_at": time.Now()})
+	userID, _ := c.Get("user_id")
+	companyID, _ := c.Get("company_id")
+	dbName, _ := c.Get("db_name")
+
+	if name, _ := dbName.(string); name != "" {
+		if db, err := database.GetCompanyDB(companyID.(uint), name); err == nil {
+			db.Model(&models.User{}).Where("id = ?", userID).
+				Updates(map[string]any{"is_online": false, "last_seen_at": time.Now()})
+		}
 	}
 	clearAuthCookie(c)
 	c.JSON(http.StatusOK, gin.H{"message": "Sesión cerrada"})
@@ -165,12 +173,26 @@ func Me(c *gin.Context) {
 	c.JSON(http.StatusOK, buildUserResponse(&user, &company))
 }
 
-// Heartbeat actualiza el estado online del usuario
+// Heartbeat actualiza el estado online del usuario.
+//
+// FIX: esta ruta vive en el grupo "authed" de router.go, que solo tiene
+// AuthRequired() — el middleware CompanyDB() (el que inyecta "db" en el
+// contexto) no se aplica ahí a propósito, porque /auth/me, /auth/refresh,
+// /auth/ws-ticket y /auth/logout no lo necesitan (cada uno resuelve su propia
+// conexión, ver Me() más abajo). Heartbeat SÍ dependía de c.Get("db") sin que
+// nadie lo inyectara: el "if" nunca se ejecutaba y el endpoint respondía 200
+// sin escribir nada, para siempre, sin ningún error visible. Se resuelve la
+// conexión a mano igual que Me().
 func Heartbeat(c *gin.Context) {
-	if db, exists := c.Get("db"); exists {
-		userID, _ := c.Get("user_id")
-		db.(*gorm.DB).Model(&models.User{}).Where("id = ?", userID).
-			Updates(map[string]any{"is_online": true, "last_seen_at": time.Now()})
+	userID, _ := c.Get("user_id")
+	companyID, _ := c.Get("company_id")
+	dbName, _ := c.Get("db_name")
+
+	if name, _ := dbName.(string); name != "" {
+		if db, err := database.GetCompanyDB(companyID.(uint), name); err == nil {
+			db.Model(&models.User{}).Where("id = ?", userID).
+				Updates(map[string]any{"is_online": true, "last_seen_at": time.Now()})
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
