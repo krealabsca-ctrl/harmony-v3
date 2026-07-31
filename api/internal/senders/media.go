@@ -8,6 +8,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"time"
@@ -187,11 +188,28 @@ func TelegramFetchMedia(ch *models.Channel, fileID string, companyID uint) (file
 	return downloadAndStore(telegramBreaker, downloadURL, "", companyID)
 }
 
+// createMultipartFilePart agrega una parte de archivo a un multipart.Writer con
+// el Content-Type real del archivo. writer.CreateFormFile de la librería estándar
+// fija "application/octet-stream" sin importar el archivo — los proveedores
+// (confirmado con Meta: "Received file of type 'application/octet-stream'")
+// rechazan la subida si el Content-Type no coincide con un tipo soportado, así
+// que hay que fijarlo explícitamente. filename debe ser solo el nombre base, sin
+// la ruta local del servidor.
+func createMultipartFilePart(writer *multipart.Writer, fieldname, filename, mimeType string) (io.Writer, error) {
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldname, filename))
+	h.Set("Content-Type", mimeType)
+	return writer.CreatePart(h)
+}
+
 // sendMetaAttachment sube un archivo local directo en el POST de envío (campo
 // "filedata") a la URL de mensajería de Meta (Messenger o Instagram, mismo
 // formato). Se usa en vez de "payload.url" porque nuestros adjuntos salientes
 // viven en /uploads, que exige JWT — Meta no podría autenticarse para bajarlos.
-func sendMetaAttachment(breaker *circuitbreaker.Breaker, apiURL, token, to, attachType, localFilePath string) (SendResult, error) {
+func sendMetaAttachment(breaker *circuitbreaker.Breaker, apiURL, token, to, attachType, localFilePath, mimeType string) (SendResult, error) {
 	file, err := os.Open(localFilePath)
 	if err != nil {
 		return SendResult{}, fmt.Errorf("abrir adjunto: %w", err)
@@ -210,7 +228,7 @@ func sendMetaAttachment(breaker *circuitbreaker.Breaker, apiURL, token, to, atta
 	writer := multipart.NewWriter(&buf)
 	writer.WriteField("recipient", string(recipientJSON))
 	writer.WriteField("message", string(messageJSON))
-	part, err := writer.CreateFormFile("filedata", localFilePath)
+	part, err := createMultipartFilePart(writer, "filedata", filepath.Base(localFilePath), mimeType)
 	if err != nil {
 		return SendResult{}, err
 	}

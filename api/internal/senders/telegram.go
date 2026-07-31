@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"harmony-api/internal/models"
@@ -86,7 +87,7 @@ var telegramMediaKinds = map[string]telegramMediaKind{
 // SendTelegramMedia envía un archivo adjunto vía Bot API. msgType debe ser
 // "image", "audio", "video" o "document" (tipo interno de Harmony, no el nombre
 // de campo de Telegram).
-func SendTelegramMedia(ch *models.Channel, to, msgType, localFilePath string) (SendResult, error) {
+func SendTelegramMedia(ch *models.Channel, to, msgType, localFilePath, mimeType string) (SendResult, error) {
 	botToken, _ := ch.Credentials["bot_token"].(string)
 	if botToken == "" {
 		return SendResult{}, fmt.Errorf("credenciales Telegram incompletas")
@@ -105,7 +106,7 @@ func SendTelegramMedia(ch *models.Channel, to, msgType, localFilePath string) (S
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 	writer.WriteField("chat_id", to)
-	part, err := writer.CreateFormFile(kind.field, localFilePath)
+	part, err := createMultipartFilePart(writer, kind.field, filepath.Base(localFilePath), mimeType)
 	if err != nil {
 		return SendResult{}, err
 	}

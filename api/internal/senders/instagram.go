@@ -72,12 +72,12 @@ func SendInstagram(ch *models.Channel, to, body string) (SendResult, error) {
 // SendInstagramMedia envía un archivo adjunto a Instagram Direct. attachType debe
 // ser "image", "audio", "video" o "file" (nomenclatura de la Graph API de Meta;
 // "document" de Harmony se traduce a "file" al llamar esta función).
-func SendInstagramMedia(ch *models.Channel, to, attachType, localFilePath string) (SendResult, error) {
+func SendInstagramMedia(ch *models.Channel, to, attachType, localFilePath, mimeType string) (SendResult, error) {
 	igBusinessID, _ := ch.Credentials["ig_business_id"].(string)
 	token, _ := ch.Credentials["access_token"].(string)
 	if igBusinessID == "" || token == "" {
 		return SendResult{}, fmt.Errorf("credenciales Instagram incompletas")
 	}
 	apiURL := fmt.Sprintf("https://graph.instagram.com/v18.0/%s/messages", igBusinessID)
-	return sendMetaAttachment(instagramBreaker, apiURL, token, to, attachType, localFilePath)
+	return sendMetaAttachment(instagramBreaker, apiURL, token, to, attachType, localFilePath, mimeType)
 }

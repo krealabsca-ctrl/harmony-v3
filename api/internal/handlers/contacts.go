@@ -284,15 +284,15 @@ func UploadAttachment(c *gin.Context) {
 			if attachType == "document" {
 				attachType = "file"
 			}
-			_, sendErr = senders.SendMessengerMedia(conv.Channel, to, attachType, savePath)
+			_, sendErr = senders.SendMessengerMedia(conv.Channel, to, attachType, savePath, mimeType)
 		case models.ChannelInstagram:
 			attachType := msgType
 			if attachType == "document" {
 				attachType = "file"
 			}
-			_, sendErr = senders.SendInstagramMedia(conv.Channel, to, attachType, savePath)
+			_, sendErr = senders.SendInstagramMedia(conv.Channel, to, attachType, savePath, mimeType)
 		case models.ChannelTelegram:
-			_, sendErr = senders.SendTelegramMedia(conv.Channel, to, msgType, savePath)
+			_, sendErr = senders.SendTelegramMedia(conv.Channel, to, msgType, savePath, mimeType)
 		}
 	}
 

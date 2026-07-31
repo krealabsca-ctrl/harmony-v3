@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"harmony-api/internal/models"
@@ -174,7 +175,7 @@ func uploadWhatsAppMedia(phoneID, token, localFilePath, mimeType string) (string
 	writer := multipart.NewWriter(&buf)
 	writer.WriteField("messaging_product", "whatsapp")
 	writer.WriteField("type", mimeType)
-	part, err := writer.CreateFormFile("file", localFilePath)
+	part, err := createMultipartFilePart(writer, "file", filepath.Base(localFilePath), mimeType)
 	if err != nil {
 		return "", err
 	}
