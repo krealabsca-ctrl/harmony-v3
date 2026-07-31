@@ -159,3 +159,45 @@ func SendTelegramMedia(ch *models.Channel, to, msgType, localFilePath, mimeType,
 	}
 	return SendResult{ExternalID: msgID}, nil
 }
+
+// RegisterTelegramWebhook llama a setWebhook para que Telegram empiece a enviar
+// las actualizaciones del bot a webhookURL, autenticadas con secretToken (que
+// Telegram reenvía en el header X-Telegram-Bot-Api-Secret-Token de cada POST,
+// validado en TelegramHandle). A diferencia de Meta, Telegram no tiene un paso
+// de "verificar y guardar" manual en su panel — se registra por API, por eso
+// esta llamada debe hacerse automáticamente al crear o editar el canal.
+func RegisterTelegramWebhook(botToken, webhookURL, secretToken string) error {
+	payload := map[string]any{
+		"url":          webhookURL,
+		"secret_token": secretToken,
+	}
+	bodyBytes, _ := json.Marshal(payload)
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/setWebhook", botToken)
+
+	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("Telegram setWebhook: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var result struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	if jsonErr := json.Unmarshal(respBytes, &result); jsonErr != nil || !result.OK {
+		desc := result.Description
+		if desc == "" {
+			desc = string(respBytes)
+		}
+		return fmt.Errorf("Telegram rechazó el webhook: %s", desc)
+	}
+	return nil
+}

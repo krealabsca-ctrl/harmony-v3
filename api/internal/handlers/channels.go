@@ -22,12 +22,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"harmony-api/internal/config"
 	"harmony-api/internal/models"
+	"harmony-api/internal/senders"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -179,6 +181,18 @@ func CreateChannel(c *gin.Context) {
 	// para construir la dirección del webhook que la UI muestra al administrador.
 	db.First(&ch, ch.ID)
 
+	// Telegram no tiene un paso de "verificar y guardar" manual como Meta: el
+	// webhook se registra por API. Si falla, el canal igual queda creado (el
+	// administrador puede reintentar guardándolo de nuevo, o el diagnóstico de
+	// Canales → Probar lo va a señalar).
+	if ch.Type == models.ChannelTelegram {
+		if botToken, ok := ch.Credentials["bot_token"].(string); ok && botToken != "" {
+			if err := senders.RegisterTelegramWebhook(botToken, channelWebhookURL(ch), ch.WebhookSecret); err != nil {
+				log.Printf("ERROR: registrar webhook de Telegram (canal %d): %v", ch.ID, err)
+			}
+		}
+	}
+
 	c.JSON(http.StatusCreated, channelResponse(ch))
 }
 
@@ -272,6 +286,18 @@ func UpdateChannel(c *gin.Context) {
 		db.Model(&ch).Updates(updates)
 		db.First(&ch, id) // recargar para devolver los valores efectivos
 	}
+
+	// Re-registrar el webhook de Telegram por si cambió el bot_token o el
+	// webhook_secret (setWebhook es idempotente: no hay problema en llamarlo de
+	// nuevo aunque nada haya cambiado).
+	if ch.Type == models.ChannelTelegram {
+		if botToken, ok := ch.Credentials["bot_token"].(string); ok && botToken != "" {
+			if err := senders.RegisterTelegramWebhook(botToken, channelWebhookURL(ch), ch.WebhookSecret); err != nil {
+				log.Printf("ERROR: registrar webhook de Telegram (canal %d): %v", ch.ID, err)
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, channelResponse(ch))
 }
 
