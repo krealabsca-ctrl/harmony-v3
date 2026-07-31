@@ -241,18 +241,17 @@ func diagnoseWhatsApp(ch models.Channel) []channelCheck {
 		out = append(out, channelCheck{"quality", "Calidad del número", checkOK, "Calificación: " + q})
 	}
 
-	// ¿El App Secret guardado es realmente el de la app de Meta?
-	//
-	// App Secret y token de verificación (WebhookSecret) son dos campos separados
-	// a propósito (ver credAppSecret/signingSecret en stubs.go): el token de
-	// verificación solo sirve para el handshake inicial del webhook, y el App
-	// Secret es la clave con la que Meta firma cada notificación entrante. Si el
-	// App Secret guardado está mal, la firma nunca valida y los mensajes entrantes
-	// se descartan en silencio aunque el webhook se vea "conectado".
+	// ¿El App Secret guardado coincide con el de la app dueña del access token?
 	//
 	// Se comprueba con appsecret_proof: un HMAC-SHA256 del access token usando el
-	// App Secret como clave. Si el valor guardado no es el App Secret correcto,
-	// Meta rechaza la llamada.
+	// App Secret como clave, enviado como parámetro extra a la Graph API. Esto NO
+	// es algo que Harmony necesite para operar — ninguna otra llamada (enviar
+	// mensajes, bajar adjuntos, consultar suscripción) lo usa ni lo requiere — es
+	// solo una comprobación adicional de consistencia. Por eso un resultado
+	// negativo es "warn" y no "error": el canal puede estar recibiendo y enviando
+	// mensajes con normalidad aunque este chequeo puntual no pase, típicamente
+	// porque el access_token se generó desde una app de Meta distinta a la que
+	// tiene el webhook suscrito (cada una con su propio App Secret).
 	if appSecret := cred(ch, "app_secret"); appSecret != "" {
 		mac := hmac.New(sha256.New, []byte(appSecret))
 		mac.Write([]byte(token))
@@ -262,13 +261,14 @@ func diagnoseWhatsApp(ch models.Channel) []channelCheck {
 			"fields":          "id",
 			"appsecret_proof": proof,
 		}); proofErr != nil {
-			out = append(out, channelCheck{"app_secret", "App Secret configurado correctamente", checkError,
-				"El valor guardado como App Secret no es válido según Meta. Cópielo de nuevo desde Configuración de " +
-					"la app → Básica → Clave secreta de la aplicación y guárdelo en Canales → Editar → App Secret. " +
+			out = append(out, channelCheck{"app_secret", "App Secret coincide con el access token", checkWarn,
+				"Meta no reconoce este App Secret como el de la app que emitió el Access Token — probablemente porque " +
+					"provienen de apps de Meta distintas (una para el token, otra para el webhook). Esto no impide que " +
+					"el canal envíe ni reciba mensajes; solo revíselo si además tiene problemas reales de entrega. " +
 					"(Detalle: " + proofErr.Error() + ")"})
 		} else {
-			out = append(out, channelCheck{"app_secret", "App Secret configurado correctamente", checkOK,
-				"El App Secret guardado es válido: las firmas de los mensajes entrantes validarán correctamente."})
+			out = append(out, channelCheck{"app_secret", "App Secret coincide con el access token", checkOK,
+				"El App Secret guardado corresponde a la misma app que emitió el Access Token."})
 		}
 	} else {
 		out = append(out, channelCheck{"app_secret", "App Secret configurado", checkWarn,
