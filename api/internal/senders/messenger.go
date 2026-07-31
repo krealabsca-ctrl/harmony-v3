@@ -79,3 +79,13 @@ func SendMessengerMedia(ch *models.Channel, to, attachType, localFilePath, mimeT
 	}
 	return sendMetaAttachment(messengerBreaker, "https://graph.facebook.com/v18.0/me/messages", token, to, attachType, localFilePath, mimeType, filename)
 }
+
+// MarkMessengerSeen le muestra al cliente que su mensaje fue visto (icono de
+// "Visto" en Messenger, el equivalente al doble check azul de WhatsApp).
+func MarkMessengerSeen(ch *models.Channel, recipientID string) error {
+	token, _ := ch.Credentials["access_token"].(string)
+	if token == "" {
+		return fmt.Errorf("credenciales Messenger incompletas")
+	}
+	return sendMetaSenderAction(messengerBreaker, "https://graph.facebook.com/v18.0/me/messages", token, recipientID, "mark_seen")
+}

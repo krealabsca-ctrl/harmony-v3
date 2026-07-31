@@ -92,6 +92,53 @@ func SendWhatsApp(ch *models.Channel, to, body string, tpl *TemplatePayload) (Se
 	return SendResult{ExternalID: msgID}, nil
 }
 
+// MarkWhatsAppRead le indica a Meta que el mensaje entrante messageID (su wamid)
+// fue leído por la empresa — es lo que hace que el cliente vea el doble check
+// azul en su WhatsApp. No pasa nada del lado de Harmony si no se llama: el
+// cliente igual recibe el mensaje entregado (un check), solo no ve confirmación
+// de lectura.
+func MarkWhatsAppRead(ch *models.Channel, messageID string) error {
+	phoneID, _ := ch.Credentials["phone_number_id"].(string)
+	token, _ := ch.Credentials["access_token"].(string)
+	if phoneID == "" || token == "" {
+		return fmt.Errorf("credenciales WhatsApp incompletas")
+	}
+	if messageID == "" {
+		return fmt.Errorf("falta el ID del mensaje a marcar como leído")
+	}
+
+	payload := map[string]any{
+		"messaging_product": "whatsapp",
+		"status":            "read",
+		"message_id":        messageID,
+	}
+
+	return whatsappBreaker.Call(func() error {
+		bodyBytes, _ := json.Marshal(payload)
+		apiURL := fmt.Sprintf("https://graph.facebook.com/v18.0/%s/messages", phoneID)
+
+		req, err := http.NewRequest("POST", apiURL, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		client := &http.Client{Timeout: 15 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("WhatsApp mark read: %w", err)
+		}
+		defer resp.Body.Close()
+
+		respBytes, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("WhatsApp API %d: %s", resp.StatusCode, string(respBytes))
+		}
+		return nil
+	})
+}
+
 // SendWhatsAppMedia sube un archivo local a la Graph API y lo envía como mensaje
 // multimedia. waType debe ser "image", "audio", "video" o "document" (el nombre
 // del campo en el payload de envío coincide exactamente con este valor).

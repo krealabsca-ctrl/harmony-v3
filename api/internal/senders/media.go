@@ -277,3 +277,38 @@ func sendMetaAttachment(breaker *circuitbreaker.Breaker, apiURL, token, to, atta
 	}
 	return SendResult{ExternalID: msgID}, nil
 }
+
+// sendMetaSenderAction llama a la Send API con un "sender_action" — mark_seen es
+// lo que le muestra al cliente que su mensaje fue visto (el equivalente de Meta
+// al doble check azul de WhatsApp para Messenger/Instagram). A diferencia de
+// WhatsApp, Meta no pide el ID de un mensaje puntual acá: mark_seen marca como
+// visto todo lo que el cliente envió hasta ahora.
+func sendMetaSenderAction(breaker *circuitbreaker.Breaker, apiURL, token, recipientID, action string) error {
+	payload := map[string]any{
+		"recipient":     map[string]any{"id": recipientID},
+		"sender_action": action,
+	}
+	bodyBytes, _ := json.Marshal(payload)
+
+	return breaker.Call(func() error {
+		req, err := http.NewRequest("POST", apiURL, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		client := &http.Client{Timeout: 15 * time.Second}
+		resp, doErr := client.Do(req)
+		if doErr != nil {
+			return fmt.Errorf("sender_action: %w", doErr)
+		}
+		defer resp.Body.Close()
+
+		respBytes, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("Meta API %d: %s", resp.StatusCode, string(respBytes))
+		}
+		return nil
+	})
+}
