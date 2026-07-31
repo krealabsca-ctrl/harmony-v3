@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Loader2, Bot } from 'lucide-react'
+import { ArrowLeft, Loader2, Bot, Volume2, FileText } from 'lucide-react'
 import api from '@/api/client'
 
 interface Attachment {
@@ -8,6 +8,7 @@ interface Attachment {
   azure_path: string
   original_name: string
   mime_type: string
+  size: number
 }
 
 interface Message {
@@ -59,6 +60,50 @@ function fmt(iso: string) {
 
 function initials(name: string) {
   return name.split(' ').slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '?'
+}
+
+/**
+ * AttachmentPreview — igual que en InboxPage.tsx: imagen/audio/video/documento
+ * según mime_type. Historial de chat y Monitoreo usan el mismo endpoint de
+ * mensajes (con Attachments precargados), pero esta página nunca los
+ * renderizaba — solo mostraba un emoji genérico ("📷 Imagen") sin el archivo.
+ */
+function AttachmentPreview({ att, out }: { att: Attachment; out: boolean }) {
+  const isImage = att.mime_type.startsWith('image/')
+  const isAudio = att.mime_type.startsWith('audio/')
+  const isVideo = att.mime_type.startsWith('video/')
+  const url = att.azure_path.startsWith('http')
+    ? att.azure_path
+    : att.azure_path.startsWith('/') ? att.azure_path : '/' + att.azure_path
+
+  if (isImage) return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="block mt-1">
+      <img src={url} alt={att.original_name}
+        className="max-w-[240px] max-h-[200px] rounded-xl object-cover border border-white/20" />
+    </a>
+  )
+  if (isAudio) return (
+    <div className="mt-1 flex items-center gap-2">
+      <Volume2 size={14} className={out ? 'text-white/80' : 'text-gray-500'} />
+      <audio controls src={url} className="h-7 max-w-[200px]" />
+    </div>
+  )
+  if (isVideo) return (
+    <div className="mt-1">
+      <video controls src={url} className="max-w-[240px] max-h-[180px] rounded-xl" />
+    </div>
+  )
+  const sizeKB = Math.round(att.size / 1024)
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer"
+      className={`mt-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors hover:opacity-80 ${
+        out ? 'border-white/30 text-white bg-white/10' : 'border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-gray-700'
+      }`}>
+      <FileText size={14} />
+      <span className="truncate max-w-[180px]">{att.original_name}</span>
+      <span className="opacity-60 flex-shrink-0">{sizeKB}KB</span>
+    </a>
+  )
 }
 
 export default function ConversationViewPage() {
@@ -171,9 +216,13 @@ export default function ConversationViewPage() {
                       }`}
                       style={isOut ? { backgroundColor: 'var(--color-primary)' } : {}}
                     >
-                      {msg.body ? (
+                      {msg.body && !((msg.attachments?.length ?? 0) > 0 && msg.body === msg.attachments?.[0]?.original_name) && (
                         <p className="whitespace-pre-wrap break-words">{msg.body}</p>
-                      ) : (
+                      )}
+                      {msg.attachments?.map(att => (
+                        <AttachmentPreview key={att.id} att={att} out={isOut} />
+                      ))}
+                      {!msg.body && !(msg.attachments?.length) && (
                         <p className="italic opacity-60 text-xs">
                           {msg.type === 'image' ? '📷 Imagen' :
                            msg.type === 'audio' ? '🎵 Audio' :
