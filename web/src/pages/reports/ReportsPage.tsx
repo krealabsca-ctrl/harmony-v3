@@ -132,6 +132,11 @@ function fmtMoney(n: number | undefined | null, decimals = 2) {
 }
 
 const STATUS_MAP: Record<string, { label: string; cls: string }> = {
+  // "pending" (sin agente asignado aún) se presenta como "Abierto" en toda la
+  // app -- ver el comentario en ListConversations (conversations.go): para el
+  // usuario solo existen "Abiertos" y "No leídos", pending es un detalle
+  // interno. Sin esta entrada, StatusBadge mostraba el valor crudo "pending".
+  pending:   { label: 'Abierto',    cls: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
   open:      { label: 'Abierto',    cls: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
   closed:    { label: 'Finalizado', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
   draft:     { label: 'Borrador',   cls: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
