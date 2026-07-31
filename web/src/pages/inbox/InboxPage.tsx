@@ -439,9 +439,9 @@ function MessageBubble({ msg }: { msg: Message }) {
           {/* Un tick = enviado. Doble tick = entregado. Doble tick azul = leído.
               "pending"/"failed" no muestran tick (aún no se confirmó el envío). */}
           {out && (msg.status === 'read' || msg.status === 'delivered') && (
-            <CheckCheck size={12} className={msg.status === 'read' ? 'text-blue-300' : ''} />
+            <CheckCheck size={16} className={msg.status === 'read' ? 'text-blue-300' : ''} />
           )}
-          {out && msg.status === 'sent' && <Check size={12} />}
+          {out && msg.status === 'sent' && <Check size={16} />}
         </div>
       </div>
     </div>
