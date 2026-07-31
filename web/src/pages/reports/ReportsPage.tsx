@@ -36,7 +36,6 @@ interface AgentStatRow {
   is_bot: boolean
   total: number
   open_count: number
-  pending_count: number
   closed_count: number
 }
 interface AgentesData { agent_stats: AgentStatRow[] }
@@ -91,7 +90,7 @@ interface PorAgentePaginated {
 interface PorAgenteData {
   agent_list: AgentListItem[]
   convs: PorAgentePaginated
-  stats: { total: number; open: number; pending: number; closed: number }
+  stats: { total: number; open: number; closed: number }
 }
 
 interface TagStatRow {
@@ -827,7 +826,6 @@ function TabPorAgente({ from, to, deptId }: { from: string; to: string; deptId: 
   const filterKpis = [
     { label: 'Total en periodo', value: data?.stats.total ?? '—', bg: 'bg-purple-100 dark:bg-purple-900/40', text: 'text-purple-700 dark:text-purple-300' },
     { label: 'Abiertos',         value: data?.stats.open    ?? '—', bg: 'bg-green-100 dark:bg-green-900/40',  text: 'text-green-700 dark:text-green-300' },
-    { label: 'Pendientes',       value: data?.stats.pending ?? '—', bg: 'bg-yellow-100 dark:bg-yellow-900/40',text: 'text-yellow-700 dark:text-yellow-300' },
     { label: 'Finalizados',      value: data?.stats.closed  ?? '—', bg: 'bg-blue-100 dark:bg-blue-900/40',    text: 'text-blue-700 dark:text-blue-300' },
   ]
 
