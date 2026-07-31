@@ -166,6 +166,32 @@ func ListConversations(c *gin.Context) {
 	})
 }
 
+// UnreadCount devuelve solo el número de conversaciones no leídas del agente
+// autenticado (mismo criterio y scoping por rol que el contador "unread" de
+// ListConversations, pero sin traer la lista completa de conversaciones ni sus
+// relaciones precargadas).
+//
+// Cuándo se llama: desde AppLayout, en cualquier pantalla del sistema — no solo
+// la Bandeja de Entrada — para poder avisar en el título de la pestaña del
+// navegador que llegaron mensajes nuevos aunque el agente esté viendo otra
+// sección. Al ser una consulta liviana (un solo COUNT), es seguro sondearla
+// desde toda la app sin el costo de ListConversations.
+func UnreadCount(c *gin.Context) {
+	db := c.MustGet("db").(*gorm.DB)
+	role := c.GetString("role")
+	userID, _ := c.Get("user_id")
+
+	q := db.Model(&models.Conversation{}).
+		Where("status IN ('open','pending') AND unread_count > 0")
+	if role == "agent" {
+		q = q.Where("agent_id = ? OR agent_id IS NULL", userID)
+	}
+
+	var unread int64
+	q.Count(&unread)
+	c.JSON(http.StatusOK, gin.H{"unread": unread})
+}
+
 // CreateConversation crea una nueva conversación de forma manual desde la UI
 // (por ejemplo, cuando un agente quiere iniciar contacto proactivo con un cliente).
 //

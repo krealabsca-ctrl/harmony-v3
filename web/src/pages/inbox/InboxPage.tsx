@@ -1467,12 +1467,8 @@ export default function InboxPage() {
     { key: 'unread', label: 'No leídos', count: counts.unread ?? 0 },
   ]
 
-  /* Actualizar título del navegador con conteo de no leídos (igual a v2 "(1) Harmony") */
-  useEffect(() => {
-    const unread = counts.unread ?? 0
-    document.title = unread > 0 ? `(${unread}) Harmony` : 'Harmony'
-    return () => { document.title = 'Harmony' }
-  }, [counts.unread])
+  // La notificación del título de la pestaña ("(N) Harmony") ahora vive en
+  // AppLayout.tsx, para que funcione en cualquier pantalla y no solo acá.
 
   return (
     <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
