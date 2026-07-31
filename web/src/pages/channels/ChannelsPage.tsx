@@ -473,6 +473,11 @@ export default function ChannelsPage() {
     } else if (form.type === 'telegram') {
       if (form.bot_token) credentials.bot_token = form.bot_token
     }
+    // El App Secret aplica a los canales de Meta. Se envía como una credencial
+    // más y solo si trae valor: en edición, vacío significa "no lo cambies".
+    if (form.type !== 'telegram' && form.app_secret.trim()) {
+      credentials.app_secret = form.app_secret.trim()
+    }
 
     // El App Secret aplica a los canales de Meta. Se envía como una credencial
     // más y solo si trae valor: en edición, vacío significa "no lo cambies".
