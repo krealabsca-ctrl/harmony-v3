@@ -137,7 +137,7 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
   // interno. Sin esta entrada, StatusBadge mostraba el valor crudo "pending".
   pending:   { label: 'Abierto',    cls: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
   open:      { label: 'Abierto',    cls: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
-  closed:    { label: 'Finalizado', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
+  closed:    { label: 'Cerrado',    cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
   draft:     { label: 'Borrador',   cls: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
   scheduled: { label: 'Programada', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
   running:   { label: 'Corriendo',  cls: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300' },
@@ -826,7 +826,7 @@ function TabPorAgente({ from, to, deptId }: { from: string; to: string; deptId: 
   const filterKpis = [
     { label: 'Total en periodo', value: data?.stats.total ?? '—', bg: 'bg-purple-100 dark:bg-purple-900/40', text: 'text-purple-700 dark:text-purple-300' },
     { label: 'Abiertos',         value: data?.stats.open    ?? '—', bg: 'bg-green-100 dark:bg-green-900/40',  text: 'text-green-700 dark:text-green-300' },
-    { label: 'Finalizados',      value: data?.stats.closed  ?? '—', bg: 'bg-blue-100 dark:bg-blue-900/40',    text: 'text-blue-700 dark:text-blue-300' },
+    { label: 'Cerrados',         value: data?.stats.closed  ?? '—', bg: 'bg-blue-100 dark:bg-blue-900/40',    text: 'text-blue-700 dark:text-blue-300' },
   ]
 
   return (
@@ -857,7 +857,7 @@ function TabPorAgente({ from, to, deptId }: { from: string; to: string; deptId: 
               <option value="">Todos los estados</option>
               <option value="open">Abiertos</option>
               <option value="pending">Pendientes</option>
-              <option value="closed">Finalizados</option>
+              <option value="closed">Cerrados</option>
             </select>
           </div>
           <div className="flex-1 min-w-48">
