@@ -209,13 +209,16 @@ func createMultipartFilePart(writer *multipart.Writer, fieldname, filename, mime
 // "filedata") a la URL de mensajería de Meta (Messenger o Instagram, mismo
 // formato). Se usa en vez de "payload.url" porque nuestros adjuntos salientes
 // viven en /uploads, que exige JWT — Meta no podría autenticarse para bajarlos.
-func sendMetaAttachment(breaker *circuitbreaker.Breaker, apiURL, token, to, attachType, localFilePath, mimeType string) (SendResult, error) {
+func sendMetaAttachment(breaker *circuitbreaker.Breaker, apiURL, token, to, attachType, localFilePath, mimeType, filename string) (SendResult, error) {
 	file, err := os.Open(localFilePath)
 	if err != nil {
 		return SendResult{}, fmt.Errorf("abrir adjunto: %w", err)
 	}
 	defer file.Close()
 
+	if filename == "" {
+		filename = filepath.Base(localFilePath)
+	}
 	recipientJSON, _ := json.Marshal(map[string]any{"id": to})
 	messageJSON, _ := json.Marshal(map[string]any{
 		"attachment": map[string]any{
@@ -228,7 +231,7 @@ func sendMetaAttachment(breaker *circuitbreaker.Breaker, apiURL, token, to, atta
 	writer := multipart.NewWriter(&buf)
 	writer.WriteField("recipient", string(recipientJSON))
 	writer.WriteField("message", string(messageJSON))
-	part, err := createMultipartFilePart(writer, "filedata", filepath.Base(localFilePath), mimeType)
+	part, err := createMultipartFilePart(writer, "filedata", filename, mimeType)
 	if err != nil {
 		return SendResult{}, err
 	}

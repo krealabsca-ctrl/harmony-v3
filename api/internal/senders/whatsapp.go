@@ -99,7 +99,7 @@ func SendWhatsApp(ch *models.Channel, to, body string, tpl *TemplatePayload) (Se
 // obtener un media-id, (2) enviar el mensaje referenciando ese media-id — WhatsApp
 // no acepta un link a un servidor propio como el nuestro (ver ServeUpload, exige
 // JWT), así que la subida directa es la única opción.
-func SendWhatsAppMedia(ch *models.Channel, to, waType, localFilePath, mimeType, caption string) (SendResult, error) {
+func SendWhatsAppMedia(ch *models.Channel, to, waType, localFilePath, mimeType, caption, filename string) (SendResult, error) {
 	phoneID, _ := ch.Credentials["phone_number_id"].(string)
 	token, _ := ch.Credentials["access_token"].(string)
 	if phoneID == "" || token == "" {
@@ -108,7 +108,7 @@ func SendWhatsAppMedia(ch *models.Channel, to, waType, localFilePath, mimeType, 
 
 	var msgID string
 	cbErr := whatsappBreaker.Call(func() error {
-		mediaID, err := uploadWhatsAppMedia(phoneID, token, localFilePath, mimeType)
+		mediaID, err := uploadWhatsAppMedia(phoneID, token, localFilePath, mimeType, filename)
 		if err != nil {
 			return err
 		}
@@ -116,6 +116,12 @@ func SendWhatsAppMedia(ch *models.Channel, to, waType, localFilePath, mimeType, 
 		mediaObj := map[string]any{"id": mediaID}
 		if caption != "" {
 			mediaObj["caption"] = caption
+		}
+		// "filename" es lo que WhatsApp muestra en la burbuja del documento del
+		// lado del cliente. Sin este campo el archivo llega como "Sin título" aunque
+		// el nombre real sí se haya guardado correctamente en Harmony.
+		if waType == "document" && filename != "" {
+			mediaObj["filename"] = filename
 		}
 		payload := map[string]any{
 			"messaging_product": "whatsapp",
@@ -164,18 +170,21 @@ func SendWhatsAppMedia(ch *models.Channel, to, waType, localFilePath, mimeType, 
 
 // uploadWhatsAppMedia sube un archivo local a POST /{phone_number_id}/media (multipart)
 // y devuelve el media-id que Meta asigna, usado luego para referenciarlo al enviar.
-func uploadWhatsAppMedia(phoneID, token, localFilePath, mimeType string) (string, error) {
+func uploadWhatsAppMedia(phoneID, token, localFilePath, mimeType, filename string) (string, error) {
 	file, err := os.Open(localFilePath)
 	if err != nil {
 		return "", fmt.Errorf("abrir adjunto: %w", err)
 	}
 	defer file.Close()
 
+	if filename == "" {
+		filename = filepath.Base(localFilePath)
+	}
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 	writer.WriteField("messaging_product", "whatsapp")
 	writer.WriteField("type", mimeType)
-	part, err := createMultipartFilePart(writer, "file", filepath.Base(localFilePath), mimeType)
+	part, err := createMultipartFilePart(writer, "file", filename, mimeType)
 	if err != nil {
 		return "", err
 	}
