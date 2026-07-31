@@ -270,6 +270,76 @@ func processInboundMessage(db *gorm.DB, channelID uint, senderPhone, senderName,
 	return nil
 }
 
+// statusRank ordena los estados de un mensaje saliente de menor a mayor avance,
+// para no dejar que una actualización tardía o duplicada retroceda el estado
+// (ej. un "delivered" que llega después de un "read" por reordenamiento de
+// entregas del proveedor).
+func statusRank(status string) int {
+	switch status {
+	case "sent":
+		return 1
+	case "delivered":
+		return 2
+	case "read":
+		return 3
+	default:
+		return 0
+	}
+}
+
+// UpdateMessageStatus busca un mensaje saliente por su external_id (el wamid de
+// WhatsApp o el mid de Messenger/Instagram) y actualiza su status a partir del
+// webhook de estado del proveedor (sent/delivered/read/failed), transmitiendo el
+// cambio por WebSocket para que la burbuja del mensaje se actualice en vivo sin
+// recargar. No hace nada si el mensaje no existe o si el nuevo estado no avanza
+// sobre el actual.
+//
+// Cuándo se llama: desde los webhooks de WhatsApp (statuses[]) y Messenger/
+// Instagram (evento delivery, que sí trae IDs concretos a diferencia de read).
+func UpdateMessageStatus(db *gorm.DB, companyID uint, externalID, status string) {
+	if externalID == "" {
+		return
+	}
+	var msg models.Message
+	if db.Where("external_id = ? AND direction = 'outbound'", externalID).First(&msg).Error != nil {
+		return
+	}
+	if status != "failed" && statusRank(status) <= statusRank(msg.Status) {
+		return
+	}
+	db.Model(&msg).Update("status", status)
+	msg.Status = status
+	ws.GlobalHub.Broadcast(chConversation(companyID, msg.ConversationID), "MessageStatusUpdated", msg)
+}
+
+// MarkOutboundReadBefore marca como leídos todos los mensajes salientes de la
+// conversación entre companyID/channelID/contactPhone creados hasta watermark
+// (inclusive). Existe porque el evento "read" de Messenger/Instagram no informa
+// IDs de mensaje concretos como WhatsApp — solo una marca de tiempo que significa
+// "todo lo enviado hasta este momento ya fue leído".
+//
+// Cuándo se llama: desde MessengerHandle/InstagramHandle al recibir un evento
+// messaging[].read.
+func MarkOutboundReadBefore(db *gorm.DB, companyID uint, channelID uint, contactPhone string, watermark time.Time) {
+	var conv models.Conversation
+	if db.Joins("JOIN contacts ON contacts.id = conversations.contact_id").
+		Where("contacts.phone = ? AND conversations.channel_id = ?", contactPhone, channelID).
+		Order("conversations.created_at DESC").First(&conv).Error != nil {
+		return
+	}
+	result := db.Model(&models.Message{}).
+		Where("conversation_id = ? AND direction = 'outbound' AND status != 'read' AND created_at <= ?", conv.ID, watermark).
+		Update("status", "read")
+	if result.RowsAffected > 0 {
+		// A diferencia de UpdateMessageStatus, aquí se actualizan varios mensajes a
+		// la vez: se avisa por conversación en vez de mandar cada fila individual.
+		ws.GlobalHub.Broadcast(chConversation(companyID, conv.ID), "MessagesReadUntil", map[string]any{
+			"conversation_id": conv.ID,
+			"until":           watermark,
+		})
+	}
+}
+
 // runBotFlow verifica si el bot automático está habilitado e intenta responder
 // al mensaje entrante con Claude (Anthropic). Si el bot no puede responder
 // (deshabilitado, sin API key, error, o centinela NEEDS_HUMAN), delega al

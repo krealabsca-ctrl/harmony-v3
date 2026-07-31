@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"harmony-api/internal/database"
 	"harmony-api/internal/models"
@@ -264,6 +265,13 @@ func WhatsAppHandle(c *gin.Context) {
 							Caption  string `json:"caption"`
 						} `json:"document"`
 					} `json:"messages"`
+					// Statuses: actualizaciones de entrega/lectura de mensajes SALIENTES
+					// (los que Harmony le mandó al cliente). Status llega como
+					// "sent"/"delivered"/"read"/"failed", igual que messages.status.
+					Statuses []struct {
+						ID     string `json:"id"`
+						Status string `json:"status"`
+					} `json:"statuses"`
 				} `json:"value"`
 			} `json:"changes"`
 		} `json:"entry"`
@@ -343,6 +351,15 @@ func WhatsAppHandle(c *gin.Context) {
 					})
 				})
 			}
+
+			// Estados de mensajes salientes (entregado/leído). Es trabajo local (sin
+			// llamadas HTTP externas), corre sincrónico — no hay razón para diferirlo.
+			for _, st := range change.Value.Statuses {
+				if st.Status != "sent" && st.Status != "delivered" && st.Status != "read" && st.Status != "failed" {
+					continue // valores desconocidos (ej. futuros) se ignoran
+				}
+				UpdateMessageStatus(res.DB, res.CompanyID, st.ID, st.Status)
+			}
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{})
@@ -382,6 +399,15 @@ func MessengerHandle(c *gin.Context) {
 						} `json:"payload"`
 					} `json:"attachments"`
 				} `json:"message"`
+				// Delivery trae los mids concretos que se entregaron — igual de
+				// preciso que WhatsApp. Read en cambio solo trae un timestamp
+				// ("todo lo enviado hasta acá ya se leyó"), sin lista de mensajes.
+				Delivery *struct {
+					Mids []string `json:"mids"`
+				} `json:"delivery"`
+				Read *struct {
+					Watermark int64 `json:"watermark"`
+				} `json:"read"`
 			} `json:"messaging"`
 		} `json:"entry"`
 	}
@@ -393,9 +419,19 @@ func MessengerHandle(c *gin.Context) {
 
 	for _, entry := range payload.Entry {
 		for _, ev := range entry.Messaging {
-			// M-12: ignorar eventos sin remitente (delivery/read receipts, echos de
-			// mensajes salientes) que crearían contactos/conversaciones fantasma.
+			// M-12: ignorar eventos sin remitente que crearían contactos/conversaciones
+			// fantasma. delivery/read SÍ traen sender.id (el contacto que entregó/leyó).
 			if ev.Sender.ID == "" {
+				continue
+			}
+			if ev.Delivery != nil {
+				for _, mid := range ev.Delivery.Mids {
+					UpdateMessageStatus(res.DB, res.CompanyID, mid, "delivered")
+				}
+				continue
+			}
+			if ev.Read != nil {
+				MarkOutboundReadBefore(res.DB, res.CompanyID, res.ChannelID, ev.Sender.ID, time.UnixMilli(ev.Read.Watermark))
 				continue
 			}
 			if ev.Message.Text != "" {
