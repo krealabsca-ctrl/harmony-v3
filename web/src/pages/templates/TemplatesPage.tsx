@@ -384,7 +384,7 @@ export default function TemplatesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Plantillas HSM</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Plantillas</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
             Gestiona las plantillas de mensajes de WhatsApp
           </p>
