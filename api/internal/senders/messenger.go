@@ -68,3 +68,24 @@ func SendMessenger(ch *models.Channel, to, body string) (SendResult, error) {
 
 	return SendResult{ExternalID: msgID}, nil
 }
+
+// SendMessengerMedia envía un archivo adjunto a Messenger. attachType debe ser
+// "image", "audio", "video" o "file" (nomenclatura de la Graph API de Meta;
+// "document" de Harmony se traduce a "file" al llamar esta función).
+func SendMessengerMedia(ch *models.Channel, to, attachType, localFilePath, mimeType, filename string) (SendResult, error) {
+	token, _ := ch.Credentials["access_token"].(string)
+	if token == "" {
+		return SendResult{}, fmt.Errorf("credenciales Messenger incompletas")
+	}
+	return sendMetaAttachment(messengerBreaker, "https://graph.facebook.com/v18.0/me/messages", token, to, attachType, localFilePath, mimeType, filename)
+}
+
+// MarkMessengerSeen le muestra al cliente que su mensaje fue visto (icono de
+// "Visto" en Messenger, el equivalente al doble check azul de WhatsApp).
+func MarkMessengerSeen(ch *models.Channel, recipientID string) error {
+	token, _ := ch.Credentials["access_token"].(string)
+	if token == "" {
+		return fmt.Errorf("credenciales Messenger incompletas")
+	}
+	return sendMetaSenderAction(messengerBreaker, "https://graph.facebook.com/v18.0/me/messages", token, recipientID, "mark_seen")
+}

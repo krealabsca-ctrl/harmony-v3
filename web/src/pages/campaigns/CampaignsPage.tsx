@@ -295,15 +295,23 @@ export default function CampaignsPage() {
   })
 
   // Canales disponibles para el wizard. Solo se carga cuando el modal está abierto.
+  //
+  // FIX: la clave de caché de react-query es global a toda la app — usar la misma
+  // clave ['channels'] que ChannelsPage.tsx (que cachea un ARRAY plano, no
+  // {data: [...]}) hacía que, si el agente había visitado Canales antes de entrar
+  // a Campañas, esta página leyera esa forma equivocada de la caché compartida y
+  // tronara en el primer render (channels?.data.filter sobre un array, que no
+  // tiene .data) — pantalla en blanco hasta refrescar (lo único que limpia la
+  // caché). Claves propias y exclusivas de esta página evitan la colisión.
   const { data: channels } = useQuery<{ data: Channel[] }>({
-    queryKey: ['channels'],
+    queryKey: ['campaigns-channels'],
     queryFn: () => api.get('/channels').then(r => r.data),
     enabled: showWizard,
   })
 
   // Plantillas disponibles para el wizard. Solo se carga cuando el modal está abierto.
   const { data: templates } = useQuery<{ data: Template[] }>({
-    queryKey: ['templates'],
+    queryKey: ['campaigns-templates'],
     queryFn: () => api.get('/templates').then(r => r.data),
     enabled: showWizard,
   })

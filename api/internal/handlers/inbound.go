@@ -59,24 +59,54 @@ func chUser(companyID, userID uint) string {
 	return fmt.Sprintf("company.%d.user.%d", companyID, userID)
 }
 
-// ProcessInbound crea o actualiza la conversación con el mensaje entrante y ejecuta
-// el flujo Bot-first.
+// InboundAttachment describe un adjunto multimedia ya descargado y guardado
+// localmente (ver senders.WhatsAppFetchMedia/MetaFetchMedia/TelegramFetchMedia),
+// listo para asociarse a un mensaje entrante.
+type InboundAttachment struct {
+	Type         string // "image" | "audio" | "video" | "document" | "sticker"
+	FileURL      string // "/uploads/company_<id>/attachments/..." — ruta local, no del proveedor
+	OriginalName string
+	MimeType     string
+	Size         int64
+}
+
+// ProcessInbound crea o actualiza la conversación con un mensaje de texto entrante
+// y ejecuta el flujo Bot-first. Ver processInboundMessage para el detalle del flujo.
 //
 // Cuándo se llama: desde los webhooks de cada canal (WhatsApp, Messenger, etc.) o
-// desde SimulateInbound durante pruebas. Es el punto de entrada principal para
-// cualquier mensaje que llega desde un usuario externo.
+// desde SimulateInbound durante pruebas.
+func ProcessInbound(db *gorm.DB, channelID uint, senderPhone, senderName, messageBody, externalID string) error {
+	return processInboundMessage(db, channelID, senderPhone, senderName, messageBody, externalID, nil)
+}
+
+// ProcessInboundMedia crea o actualiza la conversación con un mensaje multimedia
+// entrante (imagen/audio/video/documento) ya descargado del proveedor. caption
+// puede ir vacío (Messenger no manda caption; WhatsApp y Telegram sí).
+//
+// Cuándo se llama: desde los webhooks de cada canal al detectar un mensaje que no
+// es de texto, después de descargar el adjunto vía el paquete senders.
+func ProcessInboundMedia(db *gorm.DB, channelID uint, senderPhone, senderName, caption, externalID string, att InboundAttachment) error {
+	return processInboundMessage(db, channelID, senderPhone, senderName, caption, externalID, &att)
+}
+
+// processInboundMessage contiene el flujo común a mensajes de texto y multimedia:
+// verificar canal → crear/reusar contacto → crear/reusar conversación → deduplicar
+// por external_id → guardar el mensaje (y su adjunto, si viene) → actualizar
+// estadísticas de la conversación → notificar por WebSocket → disparar el flujo
+// Bot → Agente. att es nil para mensajes de texto.
 //
 // Parámetros:
 //   - db         : conexión GORM a la base de datos de la empresa (multi-tenant).
 //   - channelID  : ID interno del canal en Harmony por el que llegó el mensaje.
 //   - senderPhone: número de teléfono (o identificador único) del remitente.
 //   - senderName : nombre del remitente tal como lo reporta el proveedor (puede ser "").
-//   - messageBody: texto del mensaje recibido.
+//   - messageBody: texto del mensaje, o el caption si att no es nil (puede ser "").
 //   - externalID : ID externo del mensaje en la plataforma origen (usado para deduplicar).
+//   - att        : adjunto ya descargado, o nil para un mensaje de texto plano.
 //
 // Retorna: error si alguna operación de base de datos crítica falla; nil si todo
 // se procesó correctamente (incluyendo el caso de mensaje duplicado ignorado).
-func ProcessInbound(db *gorm.DB, channelID uint, senderPhone, senderName, messageBody, externalID string) error {
+func processInboundMessage(db *gorm.DB, channelID uint, senderPhone, senderName, messageBody, externalID string, att *InboundAttachment) error {
 	// 1. Verificar que el canal existe
 	var channel models.Channel
 	if err := db.First(&channel, channelID).Error; err != nil {
@@ -144,13 +174,20 @@ func ProcessInbound(db *gorm.DB, channelID uint, senderPhone, senderName, messag
 		}
 	}
 
+	msgType := "text"
+	if att != nil {
+		msgType = att.Type
+	}
 	msg := models.Message{
 		ConversationID: conv.ID,
 		Body:           messageBody,
 		Direction:      "inbound",
-		Status:         "received",
-		Type:           "text",
-		ExternalID:     externalID,
+		// El check constraint de "messages" solo permite pending/sent/delivered/read/failed.
+		// "received" no es un valor válido y hacía fallar el INSERT en silencio (el error se
+		// descarta en el llamador), por lo que ningún mensaje entrante se guardaba nunca.
+		Status:     "delivered",
+		Type:       msgType,
+		ExternalID: externalID,
 	}
 	if err := db.Create(&msg).Error; err != nil {
 		// M-08: dos entregas concurrentes del mismo mensaje pueden pasar ambas el
@@ -166,9 +203,30 @@ func ProcessInbound(db *gorm.DB, channelID uint, senderPhone, senderName, messag
 		return fmt.Errorf("crear mensaje: %w", err)
 	}
 
+	// Si el mensaje trae un adjunto ya descargado, crear el registro vinculado y
+	// asignarlo a msg.Attachments ANTES del broadcast: el frontend inserta el
+	// payload del WebSocket directo en su caché sin volver a pedir el mensaje,
+	// así que si attachments viaja vacío el adjunto no se ve hasta recargar.
+	if att != nil {
+		attachment := models.MessageAttachment{
+			MessageID:    msg.ID,
+			AzurePath:    att.FileURL,
+			OriginalName: att.OriginalName,
+			MimeType:     att.MimeType,
+			Size:         att.Size,
+		}
+		db.Create(&attachment)
+		msg.Attachments = []models.MessageAttachment{attachment}
+	}
+
 	// 5. Actualizar estadísticas de la conversación.
 	// Se incrementa unread_count para que la bandeja muestre el badge de mensajes sin leer.
-	db.Exec(`UPDATE conversations SET last_message_at = NOW(), unread_count = unread_count + 1 WHERE id = ?`, conv.ID)
+	// window_expires_at se renueva a 24h desde ahora: es la ventana de servicio al cliente
+	// de WhatsApp (Meta solo permite texto libre si el cliente escribió en las últimas 24h;
+	// pasado ese punto solo se pueden enviar plantillas). Antes de este fix nada escribía
+	// esta columna, por lo que quedaba NULL para siempre y el envío de texto libre se
+	// bloqueaba con "El cliente aún no ha iniciado conversación" aunque sí hubiera escrito.
+	db.Exec(`UPDATE conversations SET last_message_at = NOW(), unread_count = unread_count + 1, window_expires_at = NOW() + INTERVAL '24 hours' WHERE id = ?`, conv.ID)
 
 	// 6. Broadcast WebSocket — notificar bandeja de entrada y sala de conversación.
 	// C-01: los canales van namespaceados por empresa para no filtrar datos entre tenants.
@@ -210,6 +268,76 @@ func ProcessInbound(db *gorm.DB, channelID uint, senderPhone, senderName, messag
 	}
 
 	return nil
+}
+
+// statusRank ordena los estados de un mensaje saliente de menor a mayor avance,
+// para no dejar que una actualización tardía o duplicada retroceda el estado
+// (ej. un "delivered" que llega después de un "read" por reordenamiento de
+// entregas del proveedor).
+func statusRank(status string) int {
+	switch status {
+	case "sent":
+		return 1
+	case "delivered":
+		return 2
+	case "read":
+		return 3
+	default:
+		return 0
+	}
+}
+
+// UpdateMessageStatus busca un mensaje saliente por su external_id (el wamid de
+// WhatsApp o el mid de Messenger/Instagram) y actualiza su status a partir del
+// webhook de estado del proveedor (sent/delivered/read/failed), transmitiendo el
+// cambio por WebSocket para que la burbuja del mensaje se actualice en vivo sin
+// recargar. No hace nada si el mensaje no existe o si el nuevo estado no avanza
+// sobre el actual.
+//
+// Cuándo se llama: desde los webhooks de WhatsApp (statuses[]) y Messenger/
+// Instagram (evento delivery, que sí trae IDs concretos a diferencia de read).
+func UpdateMessageStatus(db *gorm.DB, companyID uint, externalID, status string) {
+	if externalID == "" {
+		return
+	}
+	var msg models.Message
+	if db.Where("external_id = ? AND direction = 'outbound'", externalID).First(&msg).Error != nil {
+		return
+	}
+	if status != "failed" && statusRank(status) <= statusRank(msg.Status) {
+		return
+	}
+	db.Model(&msg).Update("status", status)
+	msg.Status = status
+	ws.GlobalHub.Broadcast(chConversation(companyID, msg.ConversationID), "MessageStatusUpdated", msg)
+}
+
+// MarkOutboundReadBefore marca como leídos todos los mensajes salientes de la
+// conversación entre companyID/channelID/contactPhone creados hasta watermark
+// (inclusive). Existe porque el evento "read" de Messenger/Instagram no informa
+// IDs de mensaje concretos como WhatsApp — solo una marca de tiempo que significa
+// "todo lo enviado hasta este momento ya fue leído".
+//
+// Cuándo se llama: desde MessengerHandle/InstagramHandle al recibir un evento
+// messaging[].read.
+func MarkOutboundReadBefore(db *gorm.DB, companyID uint, channelID uint, contactPhone string, watermark time.Time) {
+	var conv models.Conversation
+	if db.Joins("JOIN contacts ON contacts.id = conversations.contact_id").
+		Where("contacts.phone = ? AND conversations.channel_id = ?", contactPhone, channelID).
+		Order("conversations.created_at DESC").First(&conv).Error != nil {
+		return
+	}
+	result := db.Model(&models.Message{}).
+		Where("conversation_id = ? AND direction = 'outbound' AND status != 'read' AND created_at <= ?", conv.ID, watermark).
+		Update("status", "read")
+	if result.RowsAffected > 0 {
+		// A diferencia de UpdateMessageStatus, aquí se actualizan varios mensajes a
+		// la vez: se avisa por conversación en vez de mandar cada fila individual.
+		ws.GlobalHub.Broadcast(chConversation(companyID, conv.ID), "MessagesReadUntil", map[string]any{
+			"conversation_id": conv.ID,
+			"until":           watermark,
+		})
+	}
 }
 
 // runBotFlow verifica si el bot automático está habilitado e intenta responder

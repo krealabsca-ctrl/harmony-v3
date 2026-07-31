@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  Send, Paperclip, CheckCheck, MessageSquare, Search, X,
+  Send, Paperclip, Check, CheckCheck, MessageSquare, Search, X,
   UserPlus, Tag, RotateCcw, PhoneCall, Plus,
   AlertTriangle, Clock, Lock, ChevronDown, ChevronLeft, Pencil, FileText,
   Volume2, History,
@@ -436,8 +436,12 @@ function MessageBubble({ msg }: { msg: Message }) {
         ))}
         <div className={`flex items-center justify-end gap-1 mt-1 text-xs ${out ? 'text-white/70' : 'text-gray-400 dark:text-gray-500'}`}>
           <span>{new Date(msg.created_at).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}</span>
-          {/* Doble tick azul si el mensaje fue leído por el destinatario */}
-          {out && <CheckCheck size={12} className={msg.status === 'read' ? 'text-blue-300' : ''} />}
+          {/* Un tick = enviado. Doble tick = entregado. Doble tick azul = leído.
+              "pending"/"failed" no muestran tick (aún no se confirmó el envío). */}
+          {out && (msg.status === 'read' || msg.status === 'delivered') && (
+            <CheckCheck size={16} className={msg.status === 'read' ? 'text-blue-300' : ''} />
+          )}
+          {out && msg.status === 'sent' && <Check size={16} />}
         </div>
       </div>
     </div>
@@ -1234,9 +1238,19 @@ export default function InboxPage() {
       setBody('')
       setSendError('')
     },
-    onError: () => {
-      toast.error('Error al enviar mensaje')
-      setSendError('No se pudo enviar el mensaje. Intenta de nuevo.')
+    onError: (err: unknown) => {
+      // El backend responde 502 cuando el mensaje SÍ se guardó pero el proveedor
+      // (WhatsApp/Messenger/etc.) rechazó el envío — insertarlo igual (status
+      // "failed") para que no desaparezca, y mostrar la razón real en vez de un
+      // genérico "intenta de nuevo" que oculta si el problema es de credenciales,
+      // ventana de 24h vencida, etc.
+      const data = (err as { response?: { data?: { data?: Message; message?: string } } })?.response?.data
+      if (data?.data) {
+        qc.setQueryData<Message[]>(['messages', selectedId], prev => [...(prev ?? []), data.data as Message])
+      }
+      const reason = data?.message || 'No se pudo enviar el mensaje. Intenta de nuevo.'
+      toast.error(reason)
+      setSendError(reason)
     },
   })
 
@@ -1345,9 +1359,17 @@ export default function InboxPage() {
       toast.success('Archivo enviado')
       setUploadError('')
     },
-    onError: () => {
-      toast.error('Error al enviar archivo')
-      setUploadError('No se pudo subir el archivo. Verifica el formato e intenta de nuevo.')
+    onError: (err: unknown) => {
+      // El backend responde 502 cuando el adjunto SÍ se guardó pero el proveedor lo
+      // rechazó — insertarlo igual (status "failed") y mostrar la razón real en vez
+      // de un genérico "verifica el formato" que puede no tener nada que ver.
+      const data = (err as { response?: { data?: { data?: Message; message?: string } } })?.response?.data
+      if (data?.data) {
+        qc.setQueryData<Message[]>(['messages', selectedId], prev => [...(prev ?? []), data.data as Message])
+      }
+      const reason = data?.message || 'No se pudo subir el archivo. Verifica el formato e intenta de nuevo.'
+      toast.error(reason)
+      setUploadError(reason)
     },
   })
 
@@ -1375,13 +1397,32 @@ export default function InboxPage() {
    */
   useEffect(() => {
     if (!selectedId) return
-    const unsub = subscribe(`conversation.${selectedId}`, 'MessageReceived', (raw: unknown) => {
+    const unsubMsg = subscribe(`conversation.${selectedId}`, 'MessageReceived', (raw: unknown) => {
       const data = raw as Message
       // Solo insertar mensajes entrantes; los salientes ya se manejan en onSuccess de sendMutation
       if (data.direction === 'inbound')
         qc.setQueryData<Message[]>(['messages', selectedId], prev => [...(prev ?? []), data])
     })
-    return () => unsub()
+    // Un mensaje saliente pasó de sent -> delivered o -> read (WhatsApp/Messenger/
+    // Instagram): actualizar esa burbuja puntual sin refetch.
+    const unsubStatus = subscribe(`conversation.${selectedId}`, 'MessageStatusUpdated', (raw: unknown) => {
+      const updated = raw as Message
+      qc.setQueryData<Message[]>(['messages', selectedId], prev =>
+        prev?.map(m => (m.id === updated.id ? { ...m, status: updated.status } : m)))
+    })
+    // Evento "read" de Messenger/Instagram: no trae IDs, solo "todo lo enviado
+    // hasta este momento ya se leyó" — se aplica a todos los salientes que apliquen.
+    const unsubReadUntil = subscribe(`conversation.${selectedId}`, 'MessagesReadUntil', (raw: unknown) => {
+      const { until } = raw as { conversation_id: number; until: string }
+      const untilMs = new Date(until).getTime()
+      qc.setQueryData<Message[]>(['messages', selectedId], prev =>
+        prev?.map(m =>
+          m.direction === 'outbound' && m.status !== 'read' && new Date(m.created_at).getTime() <= untilMs
+            ? { ...m, status: 'read' }
+            : m
+        ))
+    })
+    return () => { unsubMsg(); unsubStatus(); unsubReadUntil() }
   }, [selectedId, subscribe, qc])
 
   /* Suscripción al canal `inbox` de la empresa (company.{id}.inbox): actualiza la LISTA
@@ -1426,12 +1467,8 @@ export default function InboxPage() {
     { key: 'unread', label: 'No leídos', count: counts.unread ?? 0 },
   ]
 
-  /* Actualizar título del navegador con conteo de no leídos (igual a v2 "(1) Harmony") */
-  useEffect(() => {
-    const unread = counts.unread ?? 0
-    document.title = unread > 0 ? `(${unread}) Harmony` : 'Harmony'
-    return () => { document.title = 'Harmony' }
-  }, [counts.unread])
+  // La notificación del título de la pestaña ("(N) Harmony") ahora vive en
+  // AppLayout.tsx, para que funcione en cualquier pantalla y no solo acá.
 
   return (
     <div className="flex h-[calc(100vh-4rem)] overflow-hidden">

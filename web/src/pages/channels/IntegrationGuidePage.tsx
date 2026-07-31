@@ -91,21 +91,27 @@ const GUIDES: ChannelGuide[] = [
         'Copiá el token generado. No caduca mientras el Usuario del sistema esté activo.',
         '<strong>Nunca compartás este token.</strong> Tratalo como una contraseña.',
       ]},
-      { num: '05', title: 'Crear el canal en Harmony', steps: [
-        'En Harmony ir a <strong>Canales → Nuevo canal</strong> y seleccioná <strong>WhatsApp</strong>.',
-        'Completá: Número de teléfono (ej: +50688881234), Phone Number ID, WABA ID y Access Token.',
-        'Hacé clic en <strong>Guardar Canal</strong>.',
-        'Copiá la <strong>URL del webhook</strong> que aparece en la tarjeta del canal.',
+      { num: '05', title: 'Obtener el App Secret de la app', steps: [
+        'En el menú izquierdo de tu app, ir a <strong>Configuración → Básica</strong>.',
+        'Buscá el campo <strong>Clave secreta de la aplicación</strong> (App Secret) y hacé clic en <strong>Mostrar</strong>.',
+        '<strong>Importante:</strong> este valor es distinto del Access Token y del Token de verificación. Es la clave con la que Meta <em>firma</em> cada mensaje entrante — sin ella, Harmony recibe los mensajes pero no puede validar que vienen realmente de Meta y los descarta en silencio, aunque el canal se vea "conectado".',
+        'Copiá el App Secret y guardalo junto con el resto de credenciales.',
       ]},
-      { num: '06', title: 'Configurar el webhook en Meta', steps: [
+      { num: '06', title: 'Crear el canal en Harmony', steps: [
+        'En Harmony ir a <strong>Canales → Nuevo canal</strong> y seleccioná <strong>WhatsApp</strong>.',
+        'Completá: Número de teléfono (ej: +50688881234), Phone Number ID, WABA ID, Access Token y <strong>App Secret</strong> (el que copiaste en el paso anterior).',
+        'Hacé clic en <strong>Guardar Canal</strong>.',
+        'Copiá la <strong>URL del webhook</strong> y el <strong>Token de verificación</strong> que aparecen en la tarjeta del canal — Harmony los genera solo, son distintos del App Secret.',
+      ]},
+      { num: '07', title: 'Configurar el webhook en Meta', steps: [
         'En Meta for Developers, ir a <strong>WhatsApp → Configuración → Webhooks</strong>.',
         'Hacé clic en <strong>Editar</strong> junto a "URL de devolución de llamada".',
-        'Pegá la URL del webhook de Harmony y en <strong>Token de verificación</strong> ingresá el Webhook Secret del canal.',
+        'Pegá la URL del webhook de Harmony y en <strong>Token de verificación</strong> ingresá el <strong>Token de verificación</strong> que Harmony generó (NO el App Secret — son campos distintos).',
         'Presioná <strong>Verificar y guardar</strong>. Si el servidor es accesible, dirá "¡Éxito!".',
-        'Hacé clic en <strong>Administrar</strong> y activá las suscripciones: <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messages</code> y <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messaging_handovers</code>.',
+        'Hacé clic en <strong>Administrar</strong> y activá la suscripción <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messages</code> (cubre tanto los mensajes entrantes como los estados de entrega/lectura de los que envías).',
         'En <strong>WhatsApp → Configuración → Número de teléfono</strong>, presioná <strong>Suscribirse</strong>.',
       ]},
-      { num: '07', title: 'Pasar la app a Producción (números reales)', steps: [
+      { num: '08', title: 'Pasar la app a Producción (números reales)', steps: [
         'Con el número de prueba podés recibir mensajes de hasta 5 números verificados. Para producción necesitás un número real.',
         'En Meta for Developers, ir a <strong>WhatsApp → Inicio de la API → Agregar número de teléfono</strong>.',
         'El número <strong>no puede tener WhatsApp normal instalado</strong>. Usá un número exclusivo para la API.',
@@ -117,6 +123,7 @@ const GUIDES: ChannelGuide[] = [
       { label: 'Phone Number ID', desc: 'ID numérico del número en Meta' },
       { label: 'WABA ID',         desc: 'WhatsApp Business Account ID' },
       { label: 'Access Token',    desc: 'Token permanente de usuario del sistema' },
+      { label: 'App Secret',      desc: 'Configuración de la app → Básica. Sin esto los mensajes entrantes se descartan en silencio.' },
     ],
   },
 
@@ -158,19 +165,25 @@ const GUIDES: ChannelGuide[] = [
         '<strong>Token temporal:</strong> en Messenger → Configuración → presioná <strong>Generar token</strong>. Caduca, no usar en producción.',
         '<strong>Token permanente (recomendado):</strong> en <em>business.facebook.com → Usuarios del sistema</em>, creá un usuario admin, asignale la página, generá el token con permiso <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">pages_messaging</code>.',
       ]},
-      { num: '05', title: 'Crear el canal en Harmony', steps: [
-        'En Harmony ir a <strong>Canales → Nuevo canal → Messenger</strong>.',
-        'Completá: ID de página y Page Access Token permanente.',
-        'Guardá el canal. Copiá la <strong>URL del webhook</strong> generada.',
+      { num: '05', title: 'Obtener el App Secret de la app', steps: [
+        'En el menú izquierdo de tu app, ir a <strong>Configuración → Básica</strong>.',
+        'Buscá el campo <strong>Clave secreta de la aplicación</strong> (App Secret) y hacé clic en <strong>Mostrar</strong>.',
+        '<strong>Importante:</strong> es la clave con la que Meta firma cada mensaje entrante. Sin ella Harmony recibe los mensajes pero no puede validar la firma y los descarta en silencio, aunque el canal se vea "conectado".',
+        'Copiá el App Secret y guardalo junto con el Page Access Token.',
       ]},
-      { num: '06', title: 'Configurar el webhook en Meta', steps: [
+      { num: '06', title: 'Crear el canal en Harmony', steps: [
+        'En Harmony ir a <strong>Canales → Nuevo canal → Messenger</strong>.',
+        'Completá: ID de página, Page Access Token permanente y <strong>App Secret</strong>.',
+        'Guardá el canal. Copiá la <strong>URL del webhook</strong> y el <strong>Token de verificación</strong> generados — son distintos del App Secret.',
+      ]},
+      { num: '07', title: 'Configurar el webhook en Meta', steps: [
         'En Meta for Developers, ir a <strong>Messenger → Configuración → Webhooks</strong>.',
         'Presioná <strong>Agregar URL de devolución de llamada</strong>.',
-        'Pegá la URL del webhook de Harmony y el Webhook Secret del canal.',
+        'Pegá la URL del webhook de Harmony y, en Verify Token, el <strong>Token de verificación</strong> que Harmony generó (NO el App Secret).',
         'Presioná <strong>Verificar y guardar</strong>.',
-        'En "Suscripciones de webhook", activá: <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messages</code>, <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messaging_postbacks</code>, <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messaging_optins</code>.',
+        'En "Suscripciones de webhook", activá: <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messages</code>, <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messaging_postbacks</code>, <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messaging_optins</code>. Para ver los checks de entregado/leído en Harmony, activá también <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">message_deliveries</code> y <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">message_reads</code>.',
       ]},
-      { num: '07', title: 'Solicitar revisión de app (para todos los usuarios)', steps: [
+      { num: '08', title: 'Solicitar revisión de app (para todos los usuarios)', steps: [
         'En modo Desarrollo, solo cuentas con rol en la app pueden enviar/recibir mensajes.',
         'Para recibir mensajes de cualquier usuario, la app debe estar en modo <strong>Activo</strong> con el permiso <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">pages_messaging</code> aprobado.',
         'Ir a <strong>Revisión de la app → Permisos y funciones</strong> → buscá <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">pages_messaging</code> → <strong>Solicitar</strong>.',
@@ -180,6 +193,7 @@ const GUIDES: ChannelGuide[] = [
     requiredFields: [
       { label: 'Page ID',           desc: 'ID numérico de la Página de Facebook' },
       { label: 'Page Access Token', desc: 'Token permanente con permiso pages_messaging' },
+      { label: 'App Secret',        desc: 'Configuración de la app → Básica. Sin esto los mensajes entrantes se descartan en silencio.' },
     ],
   },
 
@@ -226,20 +240,28 @@ const GUIDES: ChannelGuide[] = [
         'Activá la opción que permite que apps de terceros accedan a los mensajes.',
         'Si no ves esta opción, verificá que la cuenta sea Business y esté vinculada a la página.',
       ]},
-      { num: '06', title: 'Crear el canal en Harmony', steps: [
-        'En Harmony ir a <strong>Canales → Nuevo canal → Instagram</strong>.',
-        'Completá: Instagram Account ID y Page Access Token permanente.',
-        'Guardá el canal. Copiá la URL del webhook.',
+      { num: '06', title: 'Obtener el App Secret de la app', steps: [
+        'En el menú izquierdo de tu app, ir a <strong>Configuración → Básica</strong>.',
+        'Buscá el campo <strong>Clave secreta de la aplicación</strong> (App Secret) y hacé clic en <strong>Mostrar</strong>.',
+        '<strong>Importante:</strong> es la clave con la que Meta firma cada mensaje entrante. Sin ella Harmony recibe los mensajes pero no puede validar la firma y los descarta en silencio, aunque el canal se vea "conectado".',
+        'Copiá el App Secret y guardalo junto con el Page Access Token.',
       ]},
-      { num: '07', title: 'Configurar el webhook y solicitar revisión', steps: [
+      { num: '07', title: 'Crear el canal en Harmony', steps: [
+        'En Harmony ir a <strong>Canales → Nuevo canal → Instagram</strong>.',
+        'Completá: Instagram Account ID, Page Access Token permanente y <strong>App Secret</strong>.',
+        'Guardá el canal. Copiá la <strong>URL del webhook</strong> y el <strong>Token de verificación</strong> generados — son distintos del App Secret.',
+      ]},
+      { num: '08', title: 'Configurar el webhook y solicitar revisión', steps: [
         'En Meta for Developers ir a <strong>Webhooks</strong> y agregá la URL del webhook de Harmony.',
-        'Suscribite a los campos: <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messages</code>, <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messaging_seen</code>.',
+        'En Verify Token, pegá el <strong>Token de verificación</strong> que Harmony generó (NO el App Secret).',
+        'Instagram Direct comparte la misma estructura de eventos que Messenger: suscribite a <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messages</code>, <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">messaging_postbacks</code>. Para los checks de entregado/leído en Harmony, activá también <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">message_deliveries</code> y <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">message_reads</code>.',
         'En <strong>Revisión de app</strong>, solicitá los permisos <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">instagram_basic</code> e <code class="bg-gray-100 dark:bg-gray-700 dark:text-gray-200 px-1 rounded text-xs">instagram_manage_messages</code>.',
       ]},
     ],
     requiredFields: [
       { label: 'Instagram Account ID', desc: 'ID numérico de la cuenta Business de Instagram' },
       { label: 'Page Access Token',    desc: 'Token permanente con permisos instagram_manage_messages' },
+      { label: 'App Secret',           desc: 'Configuración de la app → Básica. Sin esto los mensajes entrantes se descartan en silencio.' },
     ],
   },
 
@@ -496,8 +518,9 @@ export default function IntegrationGuidePage() {
         <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm mb-3">Notas generales para todos los canales</p>
         <ul className="space-y-2.5 text-sm text-gray-600 dark:text-gray-400">
           {[
+            '<strong>App Secret ≠ Token de verificación:</strong> en WhatsApp, Messenger e Instagram son dos campos distintos. El Token de verificación lo genera Harmony solo y va en el campo "Verify Token" de Meta. El App Secret lo copiás vos desde Meta (Configuración de la app → Básica) y va en el campo "App Secret" de Harmony — nunca en Meta. Si se confunden, el canal se ve conectado pero los mensajes entrantes se descartan en silencio.',
             '<strong>HTTPS obligatorio:</strong> los webhooks de Meta y Telegram requieren HTTPS con certificado SSL válido. No funcionan en HTTP ni con localhost sin tunelización.',
-            '<strong>Tokens como contraseñas:</strong> nunca compartás Access Tokens, Bot Tokens ni API Keys. Si sospechas que fueron comprometidos, regeneralos de inmediato.',
+            '<strong>Tokens como contraseñas:</strong> nunca compartás Access Tokens, Bot Tokens, App Secret ni API Keys. Si sospechas que fueron comprometidos, regeneralos de inmediato.',
             '<strong>Un canal = un número/cuenta:</strong> no podés conectar el mismo número de WhatsApp o la misma cuenta de Instagram en dos sistemas al mismo tiempo.',
             '<strong>Credenciales encriptadas:</strong> Harmony encripta todas las credenciales antes de guardarlas. Los tokens nunca se muestran en texto plano después de guardar.',
           ].map((note, i) => (

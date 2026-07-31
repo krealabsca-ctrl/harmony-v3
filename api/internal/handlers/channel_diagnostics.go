@@ -251,17 +251,9 @@ func diagnoseWhatsApp(ch models.Channel) []channelCheck {
 	//
 	// Se comprueba con appsecret_proof: un HMAC-SHA256 del access token usando el
 	// App Secret como clave. Si el valor guardado no es el App Secret correcto,
-	// Meta rechaza la llamada. El App Secret vive en las credenciales del canal
-	// (credentials['app_secret']), separado del token de verificación.
-	appSecret := credAppSecret(ch)
-	if appSecret == "" {
-		out = append(out, channelCheck{"app_secret", "App Secret configurado", checkError,
-			"No hay App Secret configurado en el canal. Meta firma cada mensaje entrante con el App Secret de la " +
-				"aplicación, así que sin él las firmas no validan y los mensajes se descartan en silencio, aunque Meta " +
-				"muestre el webhook como conectado. Cópielo desde Configuración de la app → Básica → Clave secreta de " +
-				"la aplicación y péguelo en Canales → Editar → App Secret."})
-	} else {
-		mac := hmac.New(sha256.New, []byte(appSecret))
+	// Meta rechaza la llamada.
+	if ch.WebhookSecret != "" {
+		mac := hmac.New(sha256.New, []byte(ch.WebhookSecret))
 		mac.Write([]byte(token))
 		proof := hex.EncodeToString(mac.Sum(nil))
 
@@ -269,15 +261,21 @@ func diagnoseWhatsApp(ch models.Channel) []channelCheck {
 			"fields":          "id",
 			"appsecret_proof": proof,
 		}); proofErr != nil {
-			out = append(out, channelCheck{"app_secret", "App Secret correcto", checkError,
-				"El App Secret guardado NO coincide con el de la aplicación de Meta. Meta firma cada mensaje entrante " +
-					"con el App Secret real, por lo que la firma no valida y los mensajes se descartan en silencio. " +
-					"Cópielo desde Configuración de la app → Básica → Clave secreta de la aplicación y péguelo en " +
-					"Canales → Editar → App Secret. (Detalle: " + proofErr.Error() + ")"})
+			out = append(out, channelCheck{"app_secret", "El secreto del webhook es el App Secret", checkError,
+				"El valor guardado como secreto del webhook NO es el App Secret de la aplicación de Meta. " +
+					"La verificación del webhook igual funciona (solo compara texto), pero Meta firma cada mensaje " +
+					"entrante con el App Secret real, por lo que la firma no valida y los mensajes se descartan en " +
+					"silencio. Copie el App Secret desde Configuración de la app → Básica, regístrelo en Canales → " +
+					"Editar y úselo también como token de verificación en Meta. (Detalle: " + proofErr.Error() + ")"})
 		} else {
-			out = append(out, channelCheck{"app_secret", "App Secret correcto", checkOK,
-				"El App Secret coincide con el de la aplicación: las firmas de los mensajes entrantes validarán correctamente."})
+			out = append(out, channelCheck{"app_secret", "El secreto del webhook es el App Secret", checkOK,
+				"El secreto guardado coincide con el App Secret de la aplicación: las firmas de los mensajes entrantes validarán correctamente."})
 		}
+	} else {
+		out = append(out, channelCheck{"app_secret", "App Secret configurado", checkWarn,
+			"No hay App Secret guardado. Harmony usará el token de verificación como respaldo para validar firmas, " +
+				"pero eso solo funciona si ambos se registraron con el mismo valor en Meta. Se recomienda configurar " +
+				"el App Secret real en Canales → Editar → App Secret."})
 	}
 
 	// Suscripción de la app a la WABA: sin esto Meta no entrega los mensajes
@@ -452,9 +450,8 @@ func telegramGet(token, method string) (map[string]any, error) {
 // getWebhookInfo en diagnoseTelegram.
 func diagnoseWebhook(ch models.Channel) channelCheck {
 	if ch.WebhookSecret == "" {
-		detail := "El canal no tiene token de verificación de webhook. Normalmente Harmony lo genera solo al crear el " +
-			"canal; si está vacío, guarde el canal de nuevo para generarlo. (El App Secret que firma los mensajes es " +
-			"un valor aparte y se revisa en la comprobación anterior.)"
+		detail := "El canal no tiene secreto de webhook. En los canales de Meta debe ser el App Secret de la aplicación: " +
+			"regístrelo en Canales → Editar. Sin él, Meta no puede verificar el webhook y los mensajes entrantes se descartan."
 		if ch.Type == models.ChannelTelegram {
 			detail = "El canal no tiene secreto de webhook. En Telegram es la única autenticación de los mensajes entrantes, " +
 				"por lo que sin él se rechazan todos. Guarde el canal de nuevo para generarlo."
@@ -486,8 +483,8 @@ func diagnoseWebhook(ch models.Channel) channelCheck {
 				"La dirección responde el desafío y el secreto coincide. Está lista para registrarse en la plataforma: " + url}
 		case status == http.StatusForbidden:
 			return channelCheck{"webhook", "Webhook de Harmony", checkError,
-				"La dirección respondió 403: el token de verificación registrado en Meta no coincide con el del canal. " +
-					"Use el mismo valor en Meta (Webhook → Token de verificación) que el que Harmony muestra al guardar el canal."}
+				"La dirección respondió 403: el secreto del canal no coincide con el token enviado. " +
+					"En canales de Meta debe ser el App Secret de la aplicación (Canales → Editar)."}
 		default:
 			return channelCheck{"webhook", "Webhook de Harmony", checkWarn,
 				fmt.Sprintf("La dirección %s respondió HTTP %d en lugar del desafío esperado. "+
@@ -506,8 +503,8 @@ func diagnoseWebhook(ch models.Channel) channelCheck {
 	}
 	if localErr == nil && localStatus == http.StatusForbidden {
 		return channelCheck{"webhook", "Webhook de Harmony", checkError,
-			"El token de verificación registrado en Meta no coincide con el del canal. Use el mismo valor en " +
-				"Meta (Webhook → Token de verificación) que el que Harmony muestra al guardar el canal."}
+			"El secreto del canal no coincide con el token de verificación. En canales de Meta debe ser el " +
+				"App Secret de la aplicación (Canales → Editar)."}
 	}
 	return channelCheck{"webhook", "Webhook de Harmony", checkWarn,
 		"No se pudo comprobar el webhook: " + err.Error() +

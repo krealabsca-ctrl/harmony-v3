@@ -179,6 +179,7 @@ func Setup() *gin.Engine {
 			ops.Use(middleware.RequireRole("admin", "supervisor", "agent"))
 			{
 				ops.GET("/conversations", handlers.ListConversations)
+				ops.GET("/conversations/unread-count", handlers.UnreadCount)
 				ops.POST("/conversations", handlers.CreateConversation)
 				ops.GET("/conversations/:id", handlers.GetConversation)
 				ops.GET("/conversations/:id/messages", handlers.ListMessages)

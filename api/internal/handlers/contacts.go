@@ -16,13 +16,15 @@ package handlers
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"harmony-api/internal/models"
+	"harmony-api/internal/senders"
+	"harmony-api/internal/ws"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -156,11 +158,33 @@ func UploadAttachment(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
 	convID := c.Param("id")
 
-	// Verificar que la conversación existe antes de guardar el archivo.
+	// Verificar que la conversación existe antes de guardar el archivo. Se necesitan
+	// Channel y Contact para poder enviar el adjunto al proveedor más abajo.
 	var conv models.Conversation
-	if err := db.First(&conv, convID).Error; err != nil {
+	if err := db.Preload("Channel").Preload("Contact").First(&conv, convID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "Conversación no encontrada"})
 		return
+	}
+
+	// Validar ventana de 24h de WhatsApp antes de aceptar el adjunto — mismo chequeo
+	// que SendMessage ya hace para texto (conversations.go). Sin esto, un adjunto
+	// podría subirse e intentar enviarse fuera de ventana y fallar del lado de Meta.
+	if conv.Channel != nil && conv.Channel.Type == models.ChannelWhatsApp {
+		if conv.WindowExpiresAt == nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"message":    "El cliente aún no ha iniciado conversación. Envía una plantilla de WhatsApp.",
+				"error_code": "window_not_open",
+			})
+			return
+		}
+		if time.Now().After(*conv.WindowExpiresAt) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"message":    "La ventana de 24h de WhatsApp ha expirado. Solo se pueden enviar plantillas aprobadas.",
+				"error_code": "window_expired",
+				"expired_at": conv.WindowExpiresAt,
+			})
+			return
+		}
 	}
 
 	file, header, err := c.Request.FormFile("file")
@@ -177,8 +201,12 @@ func UploadAttachment(c *gin.Context) {
 		mimeType = "application/octet-stream"
 	}
 
-	// Crear el directorio de uploads si no existe.
-	uploadsDir := "uploads"
+	// FIX: guardar bajo uploads/company_<id>/attachments — ServeUpload exige ese
+	// prefijo para cualquier usuario que no sea superadmin (uploads.go:81-87).
+	// Guardar en la raíz de uploads/ dejaba el archivo inaccesible (403) para el
+	// propio agente que lo subió.
+	companyID := c.GetUint("company_id")
+	uploadsDir := filepath.Join("uploads", fmt.Sprintf("company_%d", companyID), "attachments")
 	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error creando directorio"})
 		return
@@ -205,19 +233,13 @@ func UploadAttachment(c *gin.Context) {
 		return
 	}
 
-	// URL relativa pública del archivo; el servidor debe servir /uploads/* como estáticos.
-	fileURL := "/uploads/" + safeName
+	// URL relativa pública del archivo; ServeUpload la sirve validando el JWT y el
+	// prefijo company_<id>.
+	fileURL := fmt.Sprintf("/uploads/company_%d/attachments/%s", companyID, safeName)
 
 	// Inferir el tipo de mensaje a partir del prefijo del MIME type.
 	// Esto permite al frontend mostrar el reproductor correcto (imagen, audio, video).
-	msgType := "document" // Tipo por defecto para archivos no reconocidos.
-	if strings.HasPrefix(mimeType, "image/") {
-		msgType = "image"
-	} else if strings.HasPrefix(mimeType, "audio/") {
-		msgType = "audio"
-	} else if strings.HasPrefix(mimeType, "video/") {
-		msgType = "video"
-	}
+	msgType := classifyMime(mimeType)
 
 	// Crear el registro de mensaje con el nombre original como cuerpo (visible en el chat).
 	convIDUint := conv.ID
@@ -243,11 +265,71 @@ func UploadAttachment(c *gin.Context) {
 		Size:         size,
 	}
 	db.Create(&attachment)
-	// Adjuntar al mensaje para que el JSON de respuesta incluya el array de adjuntos.
+	// Adjuntar al mensaje para que el JSON de respuesta y el broadcast incluyan el
+	// array de adjuntos.
 	msg.Attachments = []models.MessageAttachment{attachment}
+
+	// Enviar el adjunto al proveedor. Nuestros uploads exigen JWT (ServeUpload), así
+	// que no se puede mandar un link — cada Send*Media sube el archivo directo
+	// (multipart) a la API del proveedor. Igual que SendMessage con texto: el
+	// mensaje queda guardado aunque el envío falle, solo cambia el status.
+	var sendErr error
+	var sendResult senders.SendResult
+	if conv.Channel != nil && conv.Contact != nil {
+		to := conv.Contact.Phone
+		switch conv.Channel.Type {
+		case models.ChannelWhatsApp:
+			sendResult, sendErr = senders.SendWhatsAppMedia(conv.Channel, to, msgType, savePath, mimeType, "", header.Filename)
+		case models.ChannelMessenger:
+			attachType := msgType
+			if attachType == "document" {
+				attachType = "file"
+			}
+			sendResult, sendErr = senders.SendMessengerMedia(conv.Channel, to, attachType, savePath, mimeType, header.Filename)
+		case models.ChannelInstagram:
+			attachType := msgType
+			if attachType == "document" {
+				attachType = "file"
+			}
+			sendResult, sendErr = senders.SendInstagramMedia(conv.Channel, to, attachType, savePath, mimeType, header.Filename)
+		case models.ChannelTelegram:
+			sendResult, sendErr = senders.SendTelegramMedia(conv.Channel, to, msgType, savePath, mimeType, header.Filename)
+		}
+	}
+
+	// FIX: sin guardar el external_id (wamid/mid) que devuelve el proveedor, los
+	// webhooks de estado (entregado/leído) nunca pueden encontrar este mensaje por
+	// más que lleguen — UpdateMessageStatus busca por external_id, y quedaba vacío
+	// para todo adjunto saliente. Los checks de texto sí funcionaban porque
+	// SendMessage (conversations.go) ya guardaba este valor; aquí faltaba.
+	if sendErr != nil {
+		log.Printf("ERROR: enviar adjunto (canal %d, tipo %s): %v", conv.ChannelID, msgType, sendErr)
+		db.Model(&msg).Update("status", "failed")
+		msg.Status = "failed"
+	} else if sendResult.ExternalID != "" {
+		db.Model(&msg).Updates(map[string]any{"status": "sent", "external_id": sendResult.ExternalID})
+		msg.ExternalID = sendResult.ExternalID
+		msg.Status = "sent"
+	}
 
 	// Actualizar last_message_at de la conversación para mantener la bandeja ordenada.
 	db.Exec(`UPDATE conversations SET last_message_at = NOW() WHERE id = ?`, convIDUint)
 
+	// Emitir el mensaje por WebSocket para que otros agentes lo vean en tiempo real
+	// (mismo patrón que SendMessage). El array de adjuntos ya está poblado en msg.
+	ws.GlobalHub.Broadcast(chConversation(companyID, convIDUint), "MessageReceived", msg)
+	ws.GlobalHub.Broadcast(chInbox(companyID), "MessageReceived", map[string]any{
+		"conversation_id": convIDUint,
+		"message":         msg,
+	})
+
+	if sendErr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"data":    msg,
+			"message": "El adjunto se guardó pero no pudo entregarse al proveedor.",
+			"error":   sendErr.Error(),
+		})
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{"data": msg})
 }

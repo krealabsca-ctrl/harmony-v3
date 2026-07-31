@@ -7,6 +7,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -163,6 +164,32 @@ func ListConversations(c *gin.Context) {
 			"unread": unreadCount,
 		},
 	})
+}
+
+// UnreadCount devuelve solo el número de conversaciones no leídas del agente
+// autenticado (mismo criterio y scoping por rol que el contador "unread" de
+// ListConversations, pero sin traer la lista completa de conversaciones ni sus
+// relaciones precargadas).
+//
+// Cuándo se llama: desde AppLayout, en cualquier pantalla del sistema — no solo
+// la Bandeja de Entrada — para poder avisar en el título de la pestaña del
+// navegador que llegaron mensajes nuevos aunque el agente esté viendo otra
+// sección. Al ser una consulta liviana (un solo COUNT), es seguro sondearla
+// desde toda la app sin el costo de ListConversations.
+func UnreadCount(c *gin.Context) {
+	db := c.MustGet("db").(*gorm.DB)
+	role := c.GetString("role")
+	userID, _ := c.Get("user_id")
+
+	q := db.Model(&models.Conversation{}).
+		Where("status IN ('open','pending') AND unread_count > 0")
+	if role == "agent" {
+		q = q.Where("agent_id = ? OR agent_id IS NULL", userID)
+	}
+
+	var unread int64
+	q.Count(&unread)
+	c.JSON(http.StatusOK, gin.H{"unread": unread})
 }
 
 // CreateConversation crea una nueva conversación de forma manual desde la UI
@@ -820,11 +847,53 @@ func MarkConversationRead(c *gin.Context) {
 		return
 	}
 	// A-01: un agente solo puede marcar como leídas conversaciones propias o sin asignar.
-	if _, ok := loadConvForAgent(c, db); !ok {
+	conv, ok := loadConvForAgent(c, db)
+	if !ok {
 		return
 	}
-	// Actualizar solo si hay mensajes no leídos para minimizar writes en la BD
-	db.Exec("UPDATE conversations SET unread_count = 0, updated_at = NOW() WHERE id = ? AND unread_count > 0", id)
+	// Actualizar solo si hay mensajes no leídos para minimizar writes en la BD.
+	result := db.Exec("UPDATE conversations SET unread_count = 0, updated_at = NOW() WHERE id = ? AND unread_count > 0", id)
 	_ = userID // reservado para auditoría futura (registro de quién y cuándo leyó)
+
+	// Avisarle al proveedor que el agente vio el mensaje, para que el CLIENTE vea
+	// la confirmación de lectura en su teléfono (doble check azul en WhatsApp,
+	// "Visto" en Messenger/Instagram). Solo tiene sentido si de verdad había algo
+	// sin leer (RowsAffected > 0) — evita llamadas de más si ya estaba en cero.
+	// Va en background: es una cortesía hacia el cliente, no debe demorar la
+	// respuesta de "marcar como leído" al agente ni fallar la operación local si
+	// el proveedor no responde.
+	if result.RowsAffected > 0 {
+		db.Preload("Channel").Preload("Contact").First(&conv, id)
+		if conv.Channel != nil && conv.Contact != nil {
+			channel, contactPhone := conv.Channel, conv.Contact.Phone
+			convID := uint(id)
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("PANIC marcando como leído ante el proveedor: %v", r)
+					}
+				}()
+				switch channel.Type {
+				case models.ChannelWhatsApp:
+					var lastInbound models.Message
+					if db.Where("conversation_id = ? AND direction = 'inbound' AND external_id != ''", convID).
+						Order("created_at DESC").First(&lastInbound).Error == nil {
+						if err := senders.MarkWhatsAppRead(channel, lastInbound.ExternalID); err != nil {
+							log.Printf("ERROR: marcar leído en WhatsApp (canal %d): %v", channel.ID, err)
+						}
+					}
+				case models.ChannelMessenger:
+					if err := senders.MarkMessengerSeen(channel, contactPhone); err != nil {
+						log.Printf("ERROR: marcar visto en Messenger (canal %d): %v", channel.ID, err)
+					}
+				case models.ChannelInstagram:
+					if err := senders.MarkInstagramSeen(channel, contactPhone); err != nil {
+						log.Printf("ERROR: marcar visto en Instagram (canal %d): %v", channel.ID, err)
+					}
+				}
+			}()
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "ok"})
 }

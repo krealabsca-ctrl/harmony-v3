@@ -68,3 +68,28 @@ func SendInstagram(ch *models.Channel, to, body string) (SendResult, error) {
 
 	return SendResult{ExternalID: msgID}, nil
 }
+
+// SendInstagramMedia envía un archivo adjunto a Instagram Direct. attachType debe
+// ser "image", "audio", "video" o "file" (nomenclatura de la Graph API de Meta;
+// "document" de Harmony se traduce a "file" al llamar esta función).
+func SendInstagramMedia(ch *models.Channel, to, attachType, localFilePath, mimeType, filename string) (SendResult, error) {
+	igBusinessID, _ := ch.Credentials["ig_business_id"].(string)
+	token, _ := ch.Credentials["access_token"].(string)
+	if igBusinessID == "" || token == "" {
+		return SendResult{}, fmt.Errorf("credenciales Instagram incompletas")
+	}
+	apiURL := fmt.Sprintf("https://graph.instagram.com/v18.0/%s/messages", igBusinessID)
+	return sendMetaAttachment(instagramBreaker, apiURL, token, to, attachType, localFilePath, mimeType, filename)
+}
+
+// MarkInstagramSeen le muestra al cliente que su mensaje fue visto (icono de
+// "Visto" en Instagram Direct, el equivalente al doble check azul de WhatsApp).
+func MarkInstagramSeen(ch *models.Channel, recipientID string) error {
+	igBusinessID, _ := ch.Credentials["ig_business_id"].(string)
+	token, _ := ch.Credentials["access_token"].(string)
+	if igBusinessID == "" || token == "" {
+		return fmt.Errorf("credenciales Instagram incompletas")
+	}
+	apiURL := fmt.Sprintf("https://graph.instagram.com/v18.0/%s/messages", igBusinessID)
+	return sendMetaSenderAction(instagramBreaker, apiURL, token, recipientID, "mark_seen")
+}

@@ -13,6 +13,8 @@ import {
   ChevronLeft,
   MessageSquare,
   Paperclip,
+  Volume2,
+  FileText,
 } from 'lucide-react'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
@@ -73,7 +75,7 @@ interface Message {
   direction: 'inbound' | 'outbound'
   status: string
   created_at: string
-  attachments: { id: number; azure_path: string; original_name: string; mime_type: string }[]
+  attachments: { id: number; azure_path: string; original_name: string; mime_type: string; size: number }[]
 }
 
 interface Agent {
@@ -222,10 +224,53 @@ function ConvRow({
   )
 }
 
+// ─── AttachmentPreview ────────────────────────────────────────────────────────
+
+/**
+ * AttachmentPreview — igual que en InboxPage.tsx: imagen/audio/video/documento
+ * según mime_type, en vez de solo un ícono de clip + nombre de archivo.
+ */
+function AttachmentPreview({ att, out }: { att: Message['attachments'][number]; out: boolean }) {
+  const isImage = att.mime_type.startsWith('image/')
+  const isAudio = att.mime_type.startsWith('audio/')
+  const isVideo = att.mime_type.startsWith('video/')
+  const url = att.azure_path.startsWith('http')
+    ? att.azure_path
+    : att.azure_path.startsWith('/') ? att.azure_path : '/' + att.azure_path
+
+  if (isImage) return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="block">
+      <img src={url} alt={att.original_name}
+        className="max-w-[240px] max-h-[200px] rounded-xl object-cover border border-white/20" />
+    </a>
+  )
+  if (isAudio) return (
+    <div className="flex items-center gap-2">
+      <Volume2 size={14} className={out ? 'text-white/80' : 'text-gray-500'} />
+      <audio controls src={url} className="h-7 max-w-[200px]" />
+    </div>
+  )
+  if (isVideo) return (
+    <video controls src={url} className="max-w-[240px] max-h-[180px] rounded-xl" />
+  )
+  const sizeKB = Math.round(att.size / 1024)
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer"
+      className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-colors hover:opacity-80 ${
+        out ? 'border-white/30 text-white bg-white/10' : 'border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-gray-700'
+      }`}>
+      <FileText size={14} />
+      <span className="truncate max-w-[180px]">{att.original_name}</span>
+      <span className="opacity-60 flex-shrink-0">{sizeKB}KB</span>
+    </a>
+  )
+}
+
 // ─── MessageBubble ────────────────────────────────────────────────────────────
 
 function MessageBubble({ msg }: { msg: Message }) {
   const out = msg.direction === 'outbound'
+  const hasAttachments = (msg.attachments?.length ?? 0) > 0
   return (
     <div className={`flex ${out ? 'justify-end' : 'justify-start'} mb-2`}>
       <div
@@ -236,14 +281,15 @@ function MessageBubble({ msg }: { msg: Message }) {
         }`}
         style={out ? { backgroundColor: 'var(--color-primary)' } : {}}
       >
-        {msg.type === 'text' || !msg.type ? (
-          <p className="leading-relaxed whitespace-pre-wrap break-words">{msg.body}</p>
-        ) : (
+        {msg.body && !(hasAttachments && msg.body === msg.attachments[0]?.original_name) && (
+          <p className="leading-relaxed whitespace-pre-wrap break-words mb-1">{msg.body}</p>
+        )}
+        {hasAttachments ? (
+          msg.attachments.map(att => <AttachmentPreview key={att.id} att={att} out={out} />)
+        ) : !msg.body && msg.type !== 'text' && (
           <div className="flex items-center gap-2">
             <Paperclip size={13} className={out ? 'text-white/80' : 'text-gray-400 dark:text-gray-500'} />
-            <span className="text-xs truncate max-w-[160px]">
-              {msg.attachments?.[0]?.original_name ?? msg.body ?? 'Archivo adjunto'}
-            </span>
+            <span className="text-xs truncate max-w-[160px]">Archivo adjunto</span>
           </div>
         )}
         <p className={`text-[10px] mt-1 text-right tabular-nums ${out ? 'text-white/70' : 'text-gray-400 dark:text-gray-500'}`}>

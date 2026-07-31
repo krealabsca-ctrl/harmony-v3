@@ -479,6 +479,12 @@ export default function ChannelsPage() {
       credentials.app_secret = form.app_secret.trim()
     }
 
+    // El App Secret aplica a los canales de Meta. Se envía como una credencial
+    // más y solo si trae valor: en edición, vacío significa "no lo cambies".
+    if (form.type !== 'telegram' && form.app_secret.trim()) {
+      credentials.app_secret = form.app_secret.trim()
+    }
+
     const payload = {
       name: form.name,
       type: form.type,

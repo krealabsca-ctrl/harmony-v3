@@ -764,13 +764,15 @@ func Reports(c *gin.Context) {
 	// INNER JOIN (no LEFT) porque aquí solo interesan conversaciones asignadas.
 	// resolution_pct = cerradas / total * 100, redondeado a 1 decimal.
 	// CASE WHEN COUNT(*) > 0 evita división por cero.
+	// "pending" se cuenta junto con "open" (ver comentario igual en PorAgenteStats
+	// más abajo) -- si no, esta columna "Abiertos" quedaba por debajo de la
+	// realidad, sin contar las conversaciones aún sin agente asignado.
 	type AgentPerfRow struct {
 		ID            uint    `json:"id"`
 		Name          string  `json:"name"`
 		IsBot         bool    `json:"is_bot"`
 		Total         int64   `json:"total"`
 		OpenCount     int64   `json:"open_count"`
-		PendingCount  int64   `json:"pending_count"`
 		ClosedCount   int64   `json:"closed_count"`
 		ResolutionPct float64 `json:"resolution_pct"`
 	}
@@ -780,8 +782,7 @@ func Reports(c *gin.Context) {
 			u.name,
 			u.is_bot,
 			COUNT(*) AS total,
-			COUNT(*) FILTER (WHERE c.status = 'open') AS open_count,
-			COUNT(*) FILTER (WHERE c.status = 'pending') AS pending_count,
+			COUNT(*) FILTER (WHERE c.status IN ('open','pending')) AS open_count,
 			COUNT(*) FILTER (WHERE c.status = 'closed') AS closed_count,
 			CASE WHEN COUNT(*) > 0
 				THEN ROUND(COUNT(*) FILTER (WHERE c.status = 'closed') * 100.0 / COUNT(*), 1)
@@ -998,7 +999,9 @@ func Reports(c *gin.Context) {
 		convQ += ` AND c.agent_id = @agent_id`
 		convArgs["agent_id"] = filterAgentID
 	}
-	if filterStatus != "" {
+	if filterStatus == "open" {
+		convQ += ` AND c.status IN ('open','pending')`
+	} else if filterStatus != "" {
 		convQ += ` AND c.status = @status`
 		convArgs["status"] = filterStatus
 	}
@@ -1034,18 +1037,21 @@ func Reports(c *gin.Context) {
 		lastPagePorAgente = int(porAgenteTotal) / perPage
 	}
 
-	// Stats globales del período para los KPIs del tab
+	// Stats globales del período para los KPIs del tab.
+	// "pending" (sin agente asignado aún) se cuenta junto con "open": en el resto
+	// de la app (Bandeja de Entrada, badges de la barra lateral) el usuario solo
+	// ve "Abiertos"/"No leídos", nunca "Pendiente" como categoría aparte -- antes
+	// este tab era la única pantalla que sí los separaba, mostrando dos tarjetas
+	// (Abiertos/Pendientes) donde en todos lados el mismo dato es una sola.
 	type PorAgenteStats struct {
-		Total   int64 `json:"total"`
-		Open    int64 `json:"open"`
-		Pending int64 `json:"pending"`
-		Closed  int64 `json:"closed"`
+		Total  int64 `json:"total"`
+		Open   int64 `json:"open"`
+		Closed int64 `json:"closed"`
 	}
 	var porAgenteStats PorAgenteStats
 	db.Raw(`SELECT
 			COUNT(*) AS total,
-			COUNT(*) FILTER (WHERE status='open') AS open,
-			COUNT(*) FILTER (WHERE status='pending') AS pending,
+			COUNT(*) FILTER (WHERE status IN ('open','pending')) AS open,
 			COUNT(*) FILTER (WHERE status='closed') AS closed
 		FROM conversations
 		WHERE created_at::date >= ? AND created_at::date <= ?`, from, to).
