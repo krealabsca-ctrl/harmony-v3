@@ -16,6 +16,7 @@ package handlers
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -296,6 +297,7 @@ func UploadAttachment(c *gin.Context) {
 	}
 
 	if sendErr != nil {
+		log.Printf("ERROR: enviar adjunto (canal %d, tipo %s): %v", conv.ChannelID, msgType, sendErr)
 		db.Model(&msg).Update("status", "failed")
 		msg.Status = "failed"
 	}

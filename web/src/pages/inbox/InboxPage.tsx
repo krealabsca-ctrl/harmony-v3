@@ -1234,9 +1234,19 @@ export default function InboxPage() {
       setBody('')
       setSendError('')
     },
-    onError: () => {
-      toast.error('Error al enviar mensaje')
-      setSendError('No se pudo enviar el mensaje. Intenta de nuevo.')
+    onError: (err: unknown) => {
+      // El backend responde 502 cuando el mensaje SÍ se guardó pero el proveedor
+      // (WhatsApp/Messenger/etc.) rechazó el envío — insertarlo igual (status
+      // "failed") para que no desaparezca, y mostrar la razón real en vez de un
+      // genérico "intenta de nuevo" que oculta si el problema es de credenciales,
+      // ventana de 24h vencida, etc.
+      const data = (err as { response?: { data?: { data?: Message; message?: string } } })?.response?.data
+      if (data?.data) {
+        qc.setQueryData<Message[]>(['messages', selectedId], prev => [...(prev ?? []), data.data as Message])
+      }
+      const reason = data?.message || 'No se pudo enviar el mensaje. Intenta de nuevo.'
+      toast.error(reason)
+      setSendError(reason)
     },
   })
 
@@ -1345,9 +1355,17 @@ export default function InboxPage() {
       toast.success('Archivo enviado')
       setUploadError('')
     },
-    onError: () => {
-      toast.error('Error al enviar archivo')
-      setUploadError('No se pudo subir el archivo. Verifica el formato e intenta de nuevo.')
+    onError: (err: unknown) => {
+      // El backend responde 502 cuando el adjunto SÍ se guardó pero el proveedor lo
+      // rechazó — insertarlo igual (status "failed") y mostrar la razón real en vez
+      // de un genérico "verifica el formato" que puede no tener nada que ver.
+      const data = (err as { response?: { data?: { data?: Message; message?: string } } })?.response?.data
+      if (data?.data) {
+        qc.setQueryData<Message[]>(['messages', selectedId], prev => [...(prev ?? []), data.data as Message])
+      }
+      const reason = data?.message || 'No se pudo subir el archivo. Verifica el formato e intenta de nuevo.'
+      toast.error(reason)
+      setUploadError(reason)
     },
   })
 

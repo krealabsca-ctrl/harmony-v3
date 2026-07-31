@@ -21,6 +21,30 @@ import (
 
 // ── Webhook helpers ────────────────────────────────────────────────────────────
 
+// mediaSemaphore limita a 20 las descargas de adjuntos entrantes concurrentes
+// (mismo límite y mismo motivo que botSemaphore en inbound.go: evita agotar
+// memoria/goroutines si llegan muchos mensajes multimedia a la vez). La descarga
+// del adjunto (2 peticiones HTTP al proveedor para WhatsApp/Telegram) se dispara
+// en una goroutine para no bloquear la respuesta 200 al webhook — el proveedor
+// espera esa respuesta rápido, igual que ya razona runBotFlow para el bot.
+var mediaSemaphore = make(chan struct{}, 20)
+
+// processMediaAsync adquiere un cupo de mediaSemaphore (bloqueante si está lleno,
+// pero sin bloquear el webhook porque corre en su propia goroutine) y ejecuta fn,
+// que debe hacer la descarga del adjunto y llamar a ProcessInboundMedia.
+func processMediaAsync(fn func()) {
+	go func() {
+		mediaSemaphore <- struct{}{}
+		defer func() { <-mediaSemaphore }()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("PANIC procesando adjunto entrante: %v", r)
+			}
+		}()
+		fn()
+	}()
+}
+
 type channelResult struct {
 	DB        *gorm.DB
 	ChannelID uint
@@ -297,20 +321,26 @@ func WhatsAppHandle(c *gin.Context) {
 					continue
 				}
 
-				var channel models.Channel
-				if res.DB.First(&channel, res.ChannelID).Error != nil {
-					continue
-				}
-				fileURL, resolvedMime, size, fetchErr := senders.WhatsAppFetchMedia(&channel, mediaID, res.CompanyID)
-				if fetchErr != nil {
-					log.Printf("ERROR: descargar adjunto WhatsApp (canal %d): %v", res.ChannelID, fetchErr)
-					continue
-				}
-				if mimeType == "" {
-					mimeType = resolvedMime
-				}
-				_ = ProcessInboundMedia(res.DB, res.ChannelID, wMsg.From, senderName, caption, wMsg.ID, InboundAttachment{
-					Type: msgType, FileURL: fileURL, OriginalName: filename, MimeType: mimeType, Size: size,
+				// Descarga y procesamiento en background: Meta espera un 200 rápido y
+				// resolver+bajar el adjunto son 2 peticiones HTTP de red que no deben
+				// retrasar esa respuesta ni la llegada del mensaje a la bandeja.
+				wMsg, senderName, mediaID, mimeType, caption, filename, msgType := wMsg, senderName, mediaID, mimeType, caption, filename, msgType
+				processMediaAsync(func() {
+					var channel models.Channel
+					if res.DB.First(&channel, res.ChannelID).Error != nil {
+						return
+					}
+					fileURL, resolvedMime, size, fetchErr := senders.WhatsAppFetchMedia(&channel, mediaID, res.CompanyID)
+					if fetchErr != nil {
+						log.Printf("ERROR: descargar adjunto WhatsApp (canal %d): %v", res.ChannelID, fetchErr)
+						return
+					}
+					if mimeType == "" {
+						mimeType = resolvedMime
+					}
+					_ = ProcessInboundMedia(res.DB, res.ChannelID, wMsg.From, senderName, caption, wMsg.ID, InboundAttachment{
+						Type: msgType, FileURL: fileURL, OriginalName: filename, MimeType: mimeType, Size: size,
+					})
 				})
 			}
 		}
@@ -387,13 +417,17 @@ func MessengerHandle(c *gin.Context) {
 				continue
 			}
 
-			fileURL, mimeType, size, fetchErr := senders.MetaFetchMedia(att.Payload.URL, res.CompanyID)
-			if fetchErr != nil {
-				log.Printf("ERROR: descargar adjunto Messenger/Instagram (canal %d): %v", res.ChannelID, fetchErr)
-				continue
-			}
-			_ = ProcessInboundMedia(res.DB, res.ChannelID, ev.Sender.ID, "", "", ev.Message.Mid, InboundAttachment{
-				Type: msgType, FileURL: fileURL, MimeType: mimeType, Size: size,
+			// Descarga en background: no retrasar la respuesta 200 al webhook.
+			ev, msgType, payloadURL := ev, msgType, att.Payload.URL
+			processMediaAsync(func() {
+				fileURL, mimeType, size, fetchErr := senders.MetaFetchMedia(payloadURL, res.CompanyID)
+				if fetchErr != nil {
+					log.Printf("ERROR: descargar adjunto Messenger/Instagram (canal %d): %v", res.ChannelID, fetchErr)
+					return
+				}
+				_ = ProcessInboundMedia(res.DB, res.ChannelID, ev.Sender.ID, "", "", ev.Message.Mid, InboundAttachment{
+					Type: msgType, FileURL: fileURL, MimeType: mimeType, Size: size,
+				})
 			})
 		}
 	}
@@ -510,22 +544,25 @@ func TelegramHandle(c *gin.Context) {
 		return
 	}
 
-	var channel models.Channel
-	if res.DB.First(&channel, res.ChannelID).Error != nil {
-		c.JSON(http.StatusOK, gin.H{})
-		return
-	}
-	fileURL, resolvedMime, size, fetchErr := senders.TelegramFetchMedia(&channel, fileID, res.CompanyID)
-	if fetchErr != nil {
-		log.Printf("ERROR: descargar adjunto Telegram (canal %d): %v", res.ChannelID, fetchErr)
-		c.JSON(http.StatusOK, gin.H{})
-		return
-	}
-	if mimeType == "" {
-		mimeType = resolvedMime
-	}
-	_ = ProcessInboundMedia(res.DB, res.ChannelID, senderID, senderName, payload.Message.Caption, extID, InboundAttachment{
-		Type: msgType, FileURL: fileURL, OriginalName: filename, MimeType: mimeType, Size: size,
+	// Descarga y procesamiento en background: Telegram (igual que Meta) espera un
+	// 200 rápido, y getFile+descarga son 2 peticiones HTTP que no deben retrasarlo.
+	caption := payload.Message.Caption
+	processMediaAsync(func() {
+		var channel models.Channel
+		if res.DB.First(&channel, res.ChannelID).Error != nil {
+			return
+		}
+		fileURL, resolvedMime, size, fetchErr := senders.TelegramFetchMedia(&channel, fileID, res.CompanyID)
+		if fetchErr != nil {
+			log.Printf("ERROR: descargar adjunto Telegram (canal %d): %v", res.ChannelID, fetchErr)
+			return
+		}
+		if mimeType == "" {
+			mimeType = resolvedMime
+		}
+		_ = ProcessInboundMedia(res.DB, res.ChannelID, senderID, senderName, caption, extID, InboundAttachment{
+			Type: msgType, FileURL: fileURL, OriginalName: filename, MimeType: mimeType, Size: size,
+		})
 	})
 	c.JSON(http.StatusOK, gin.H{})
 }
