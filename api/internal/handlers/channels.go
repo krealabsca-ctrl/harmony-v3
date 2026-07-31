@@ -35,7 +35,7 @@ import (
 
 // credentialKeys son las claves de credenciales que la UI muestra como "configurado"
 // sin revelar su valor.
-var credentialKeys = []string{"phone_number_id", "waba_id", "access_token", "page_id", "bot_token"}
+var credentialKeys = []string{"phone_number_id", "waba_id", "access_token", "page_id", "bot_token", "app_secret"}
 
 // channelWebhookURL construye la dirección pública del webhook del canal.
 // Se usa la URL del frontend como base porque en producción el mismo dominio

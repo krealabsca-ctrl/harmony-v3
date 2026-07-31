@@ -34,6 +34,7 @@ interface Channel {
     access_token?: boolean
     page_id?: boolean
     bot_token?: boolean
+    app_secret?: boolean
   }
 }
 
@@ -85,9 +86,10 @@ interface ChannelFormData {
   access_token: string
   page_id: string
   bot_token: string
-  // Secreto del webhook. En canales de Meta debe ser el App Secret de la app,
-  // porque es la clave con la que Meta firma cada notificación entrante.
-  webhook_secret: string
+  // App Secret de la aplicación de Meta: la clave con la que Meta firma cada
+  // notificación entrante. Es distinto del token de verificación del webhook,
+  // que Harmony genera automáticamente.
+  app_secret: string
 }
 
 // ─── Brand config ─────────────────────────────────────────────────────────────
@@ -245,7 +247,7 @@ const emptyForm: ChannelFormData = {
   access_token: '',
   page_id: '',
   bot_token: '',
-  webhook_secret: '',
+  app_secret: '',
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -416,7 +418,7 @@ export default function ChannelsPage() {
       access_token: '',
       page_id: '',
       bot_token: '',
-      webhook_secret: '',
+      app_secret: '',
     })
     setFormErrors({})
     setCreatedWebhookUrl(null)
@@ -471,6 +473,11 @@ export default function ChannelsPage() {
     } else if (form.type === 'telegram') {
       if (form.bot_token) credentials.bot_token = form.bot_token
     }
+    // El App Secret aplica a los canales de Meta. Se envía como una credencial
+    // más y solo si trae valor: en edición, vacío significa "no lo cambies".
+    if (form.type !== 'telegram' && form.app_secret.trim()) {
+      credentials.app_secret = form.app_secret.trim()
+    }
 
     const payload = {
       name: form.name,
@@ -480,9 +487,6 @@ export default function ChannelsPage() {
       identifier: form.identifier,
       is_active: form.is_active,
       credentials,
-      // Se envía solo si el usuario escribió algo: en edición, un campo vacío
-      // significa "conservar el secreto actual", no borrarlo.
-      ...(form.webhook_secret.trim() ? { webhook_secret: form.webhook_secret.trim() } : {}),
     }
 
     if (editingChannel) {
@@ -1217,18 +1221,18 @@ export default function ChannelsPage() {
                         </>
                       )}
 
-                      {/* Secreto del webhook. En los canales de Meta DEBE ser el App
-                          Secret de la app: es la clave con la que Meta firma cada
-                          notificación y con la que Harmony valida que sea auténtica. */}
+                      {/* App Secret: clave con la que Meta FIRMA cada notificación
+                          entrante. Es distinto del token de verificación del webhook
+                          (ese lo genera Harmony y se muestra más abajo). */}
                       {form.type !== 'telegram' && (
                         <>
                           <PasswordField
-                            label="App Secret (secreto del webhook)"
+                            label="App Secret"
                             hint="Configuración de la app en Meta → Básica → Clave secreta de la aplicación"
-                            name="webhook_secret"
-                            value={form.webhook_secret}
+                            name="app_secret"
+                            value={form.app_secret}
                             onChange={handleFormChange}
-                            isConfigured={!!editingChannel?.webhook_secret}
+                            isConfigured={editingChannel?.credential_flags?.app_secret}
                             type={form.type}
                           />
                           <div className="flex items-start gap-2 mt-1 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
@@ -1236,9 +1240,10 @@ export default function ChannelsPage() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
                             <p className="text-xs text-amber-700">
-                              Este mismo valor se usa como <strong>Token de verificación</strong> al configurar el
-                              webhook en Meta. Si no coincide con el App Secret, Meta confirmará el webhook pero los
-                              mensajes entrantes se descartarán por firma inválida.
+                              Meta firma con esta clave cada mensaje entrante. <strong>Sin ella los mensajes se
+                              descartan en silencio</strong>, aunque Meta muestre el webhook como conectado.
+                              No la confunda con el <strong>Token de verificación</strong>, que Harmony genera solo
+                              y se muestra al guardar el canal.
                             </p>
                           </div>
                         </>

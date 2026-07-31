@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"harmony-api/internal/database"
 	"harmony-api/internal/models"
@@ -19,10 +20,37 @@ import (
 // ── Webhook helpers ────────────────────────────────────────────────────────────
 
 type channelResult struct {
-	DB            *gorm.DB
-	ChannelID     uint
-	CompanyID     uint
+	DB        *gorm.DB
+	ChannelID uint
+	CompanyID uint
+	// WebhookSecret es el token de verificación del webhook: el valor que se
+	// registra en Meta como "Verify Token" y que solo se usa en el handshake GET.
 	WebhookSecret string
+	// AppSecret es la clave secreta de la aplicación de Meta, con la que Meta
+	// firma cada notificación (X-Hub-Signature-256). Son DOS valores distintos:
+	// confundirlos hace que la verificación pase pero que todos los mensajes
+	// entrantes se descarten por firma inválida.
+	AppSecret string
+}
+
+// signingSecret devuelve la clave con la que validar la firma de Meta: el
+// app_secret de las credenciales del canal y, si no está configurado, el
+// webhook_secret como respaldo (instalaciones donde ambos se registraron igual).
+func (r *channelResult) signingSecret() string {
+	if r.AppSecret != "" {
+		return r.AppSecret
+	}
+	return r.WebhookSecret
+}
+
+// credAppSecret extrae el app_secret de las credenciales cifradas del canal.
+func credAppSecret(ch models.Channel) string {
+	if v, ok := ch.Credentials["app_secret"]; ok {
+		if s, isStr := v.(string); isStr {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
 }
 
 // findChannelByPublicID resuelve el public_id (UUID) de un canal a su DB, ID interno
@@ -43,8 +71,8 @@ func findChannelByPublicID(publicID string) (*channelResult, error) {
 		Where("public_id = ?", publicID).Take(&lk).Error; err == nil {
 		if db, e := database.GetCompanyDB(lk.CompanyID, lk.DBName); e == nil {
 			var ch models.Channel
-			if db.Select("id, webhook_secret").Where("public_id = ?", publicID).First(&ch).Error == nil {
-				return &channelResult{DB: db, ChannelID: ch.ID, CompanyID: lk.CompanyID, WebhookSecret: ch.WebhookSecret}, nil
+			if db.Select("id, webhook_secret, credentials").Where("public_id = ?", publicID).First(&ch).Error == nil {
+				return &channelResult{DB: db, ChannelID: ch.ID, CompanyID: lk.CompanyID, WebhookSecret: ch.WebhookSecret, AppSecret: credAppSecret(ch)}, nil
 			}
 		}
 		// Entrada obsoleta (canal borrado o empresa inactiva): eliminarla y reintentar por escaneo.
@@ -67,9 +95,9 @@ func findChannelByPublicID(publicID string) (*channelResult, error) {
 			continue
 		}
 		var ch models.Channel
-		if db.Select("id, webhook_secret").Where("public_id = ?", publicID).First(&ch).Error == nil {
+		if db.Select("id, webhook_secret, credentials").Where("public_id = ?", publicID).First(&ch).Error == nil {
 			rememberChannelLookup(publicID, co.ID, co.DBName)
-			return &channelResult{DB: db, ChannelID: ch.ID, CompanyID: co.ID, WebhookSecret: ch.WebhookSecret}, nil
+			return &channelResult{DB: db, ChannelID: ch.ID, CompanyID: co.ID, WebhookSecret: ch.WebhookSecret, AppSecret: credAppSecret(ch)}, nil
 		}
 	}
 	return nil, nil
@@ -160,7 +188,7 @@ func WhatsAppHandle(c *gin.Context) {
 		return
 	}
 
-	body := readBodyAndVerifyMeta(c, res.WebhookSecret)
+	body := readBodyAndVerifyMeta(c, res.signingSecret())
 	if body == nil {
 		return // ya respondió 200
 	}
@@ -239,7 +267,7 @@ func MessengerHandle(c *gin.Context) {
 		return
 	}
 
-	body := readBodyAndVerifyMeta(c, res.WebhookSecret)
+	body := readBodyAndVerifyMeta(c, res.signingSecret())
 	if body == nil {
 		return
 	}
