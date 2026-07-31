@@ -999,7 +999,9 @@ func Reports(c *gin.Context) {
 		convQ += ` AND c.agent_id = @agent_id`
 		convArgs["agent_id"] = filterAgentID
 	}
-	if filterStatus != "" {
+	if filterStatus == "open" {
+		convQ += ` AND c.status IN ('open','pending')`
+	} else if filterStatus != "" {
 		convQ += ` AND c.status = @status`
 		convArgs["status"] = filterStatus
 	}

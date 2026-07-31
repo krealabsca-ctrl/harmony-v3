@@ -856,7 +856,6 @@ function TabPorAgente({ from, to, deptId }: { from: string; to: string; deptId: 
             >
               <option value="">Todos los estados</option>
               <option value="open">Abiertos</option>
-              <option value="pending">Pendientes</option>
               <option value="closed">Cerrados</option>
             </select>
           </div>
