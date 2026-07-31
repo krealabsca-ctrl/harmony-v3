@@ -6,12 +6,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"harmony-api/internal/database"
 	"harmony-api/internal/models"
+	"harmony-api/internal/senders"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -212,6 +214,31 @@ func WhatsAppHandle(c *gin.Context) {
 						Context struct {
 							ID string `json:"id"`
 						} `json:"context"`
+						// Sub-objetos multimedia: WhatsApp solo llena el que coincide con Type.
+						Image struct {
+							ID       string `json:"id"`
+							MimeType string `json:"mime_type"`
+							Caption  string `json:"caption"`
+						} `json:"image"`
+						Video struct {
+							ID       string `json:"id"`
+							MimeType string `json:"mime_type"`
+							Caption  string `json:"caption"`
+						} `json:"video"`
+						Audio struct {
+							ID       string `json:"id"`
+							MimeType string `json:"mime_type"`
+						} `json:"audio"`
+						Sticker struct {
+							ID       string `json:"id"`
+							MimeType string `json:"mime_type"`
+						} `json:"sticker"`
+						Document struct {
+							ID       string `json:"id"`
+							MimeType string `json:"mime_type"`
+							Filename string `json:"filename"`
+							Caption  string `json:"caption"`
+						} `json:"document"`
 					} `json:"messages"`
 				} `json:"value"`
 			} `json:"changes"`
@@ -226,18 +253,6 @@ func WhatsAppHandle(c *gin.Context) {
 	for _, entry := range payload.Entry {
 		for _, change := range entry.Changes {
 			for _, wMsg := range change.Value.Messages {
-				if wMsg.Type != "text" || wMsg.Text.Body == "" {
-					continue
-				}
-
-				// Si es un reply (context.id presente), verificar si es una aprobación de pub_post.
-				// C-02: se pasa wMsg.From para validar que el remitente sea el número aprobador.
-				if wMsg.Context.ID != "" {
-					if ProcessPubApprovalReply(res.DB, wMsg.Context.ID, wMsg.From, wMsg.Text.Body) {
-						continue // procesado como aprobación — no entra al inbox normal
-					}
-				}
-
 				senderName := wMsg.From
 				for _, ct := range change.Value.Contacts {
 					if ct.WaID == wMsg.From {
@@ -245,7 +260,58 @@ func WhatsAppHandle(c *gin.Context) {
 						break
 					}
 				}
-				_ = ProcessInbound(res.DB, res.ChannelID, wMsg.From, senderName, wMsg.Text.Body, wMsg.ID)
+
+				if wMsg.Type == "text" {
+					if wMsg.Text.Body == "" {
+						continue
+					}
+					// Si es un reply (context.id presente), verificar si es una aprobación de pub_post.
+					// C-02: se pasa wMsg.From para validar que el remitente sea el número aprobador.
+					if wMsg.Context.ID != "" {
+						if ProcessPubApprovalReply(res.DB, wMsg.Context.ID, wMsg.From, wMsg.Text.Body) {
+							continue // procesado como aprobación — no entra al inbox normal
+						}
+					}
+					_ = ProcessInbound(res.DB, res.ChannelID, wMsg.From, senderName, wMsg.Text.Body, wMsg.ID)
+					continue
+				}
+
+				// Multimedia: resolver mediaID/mimeType/caption/nombre según el tipo. Cualquier
+				// otro tipo (location, interactive, reaction, button, etc.) queda fuera de alcance.
+				var mediaID, mimeType, caption, filename, msgType string
+				switch wMsg.Type {
+				case "image":
+					mediaID, mimeType, caption, msgType = wMsg.Image.ID, wMsg.Image.MimeType, wMsg.Image.Caption, "image"
+				case "video":
+					mediaID, mimeType, caption, msgType = wMsg.Video.ID, wMsg.Video.MimeType, wMsg.Video.Caption, "video"
+				case "audio":
+					mediaID, mimeType, msgType = wMsg.Audio.ID, wMsg.Audio.MimeType, "audio"
+				case "sticker":
+					mediaID, mimeType, msgType = wMsg.Sticker.ID, wMsg.Sticker.MimeType, "sticker"
+				case "document":
+					mediaID, mimeType, caption, filename, msgType = wMsg.Document.ID, wMsg.Document.MimeType, wMsg.Document.Caption, wMsg.Document.Filename, "document"
+				default:
+					continue
+				}
+				if mediaID == "" {
+					continue
+				}
+
+				var channel models.Channel
+				if res.DB.First(&channel, res.ChannelID).Error != nil {
+					continue
+				}
+				fileURL, resolvedMime, size, fetchErr := senders.WhatsAppFetchMedia(&channel, mediaID, res.CompanyID)
+				if fetchErr != nil {
+					log.Printf("ERROR: descargar adjunto WhatsApp (canal %d): %v", res.ChannelID, fetchErr)
+					continue
+				}
+				if mimeType == "" {
+					mimeType = resolvedMime
+				}
+				_ = ProcessInboundMedia(res.DB, res.ChannelID, wMsg.From, senderName, caption, wMsg.ID, InboundAttachment{
+					Type: msgType, FileURL: fileURL, OriginalName: filename, MimeType: mimeType, Size: size,
+				})
 			}
 		}
 	}
@@ -277,8 +343,14 @@ func MessengerHandle(c *gin.Context) {
 			Messaging []struct {
 				Sender  struct{ ID string `json:"id"` } `json:"sender"`
 				Message struct {
-					Mid  string `json:"mid"`
-					Text string `json:"text"`
+					Mid         string `json:"mid"`
+					Text        string `json:"text"`
+					Attachments []struct {
+						Type    string `json:"type"` // image | audio | video | file
+						Payload struct {
+							URL string `json:"url"`
+						} `json:"payload"`
+					} `json:"attachments"`
 				} `json:"message"`
 			} `json:"messaging"`
 		} `json:"entry"`
@@ -291,12 +363,38 @@ func MessengerHandle(c *gin.Context) {
 
 	for _, entry := range payload.Entry {
 		for _, ev := range entry.Messaging {
-			// M-12: ignorar eventos sin texto o sin remitente (delivery/read receipts,
-			// echos de mensajes salientes) que crearían contactos/conversaciones fantasma.
-			if ev.Message.Text == "" || ev.Sender.ID == "" {
+			// M-12: ignorar eventos sin remitente (delivery/read receipts, echos de
+			// mensajes salientes) que crearían contactos/conversaciones fantasma.
+			if ev.Sender.ID == "" {
 				continue
 			}
-			_ = ProcessInbound(res.DB, res.ChannelID, ev.Sender.ID, "", ev.Message.Text, ev.Message.Mid)
+			if ev.Message.Text != "" {
+				_ = ProcessInbound(res.DB, res.ChannelID, ev.Sender.ID, "", ev.Message.Text, ev.Message.Mid)
+				continue
+			}
+			if len(ev.Message.Attachments) == 0 {
+				continue
+			}
+
+			// messages.type no tiene el valor 'file': Messenger lo usa para
+			// documentos genéricos, se traduce a 'document' (único valor válido).
+			att := ev.Message.Attachments[0]
+			msgType := att.Type
+			if msgType == "file" {
+				msgType = "document"
+			}
+			if att.Payload.URL == "" {
+				continue
+			}
+
+			fileURL, mimeType, size, fetchErr := senders.MetaFetchMedia(att.Payload.URL, res.CompanyID)
+			if fetchErr != nil {
+				log.Printf("ERROR: descargar adjunto Messenger/Instagram (canal %d): %v", res.ChannelID, fetchErr)
+				continue
+			}
+			_ = ProcessInboundMedia(res.DB, res.ChannelID, ev.Sender.ID, "", "", ev.Message.Mid, InboundAttachment{
+				Type: msgType, FileURL: fileURL, MimeType: mimeType, Size: size,
+			})
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{})
@@ -348,10 +446,34 @@ func TelegramHandle(c *gin.Context) {
 				LastName  string `json:"last_name"`
 			} `json:"from"`
 			Text string `json:"text"`
+			// Photo trae varias resoluciones del mismo archivo; se toma la última
+			// (la de mayor calidad). El resto de tipos multimedia vienen ya en un
+			// único objeto.
+			Photo []struct {
+				FileID string `json:"file_id"`
+			} `json:"photo"`
+			Voice struct {
+				FileID   string `json:"file_id"`
+				MimeType string `json:"mime_type"`
+			} `json:"voice"`
+			Audio struct {
+				FileID   string `json:"file_id"`
+				MimeType string `json:"mime_type"`
+			} `json:"audio"`
+			Video struct {
+				FileID   string `json:"file_id"`
+				MimeType string `json:"mime_type"`
+			} `json:"video"`
+			Document struct {
+				FileID   string `json:"file_id"`
+				MimeType string `json:"mime_type"`
+				FileName string `json:"file_name"`
+			} `json:"document"`
+			Caption string `json:"caption"`
 		} `json:"message"`
 	}
 
-	if err := bindJSON(body, &payload); err != nil || payload.Message.Text == "" {
+	if err := bindJSON(body, &payload); err != nil {
 		c.JSON(http.StatusOK, gin.H{})
 		return
 	}
@@ -363,7 +485,48 @@ func TelegramHandle(c *gin.Context) {
 	}
 	extID := strconv.Itoa(payload.Message.MessageID)
 
-	_ = ProcessInbound(res.DB, res.ChannelID, senderID, senderName, payload.Message.Text, extID)
+	if payload.Message.Text != "" {
+		_ = ProcessInbound(res.DB, res.ChannelID, senderID, senderName, payload.Message.Text, extID)
+		c.JSON(http.StatusOK, gin.H{})
+		return
+	}
+
+	// Multimedia: revisar cada campo posible en orden. 'voice' no existe como
+	// valor de messages.type, se guarda como 'audio' (mismo player en la UI).
+	var fileID, mimeType, filename, msgType string
+	switch {
+	case len(payload.Message.Photo) > 0:
+		fileID, msgType = payload.Message.Photo[len(payload.Message.Photo)-1].FileID, "image"
+	case payload.Message.Voice.FileID != "":
+		fileID, mimeType, msgType = payload.Message.Voice.FileID, payload.Message.Voice.MimeType, "audio"
+	case payload.Message.Audio.FileID != "":
+		fileID, mimeType, msgType = payload.Message.Audio.FileID, payload.Message.Audio.MimeType, "audio"
+	case payload.Message.Video.FileID != "":
+		fileID, mimeType, msgType = payload.Message.Video.FileID, payload.Message.Video.MimeType, "video"
+	case payload.Message.Document.FileID != "":
+		fileID, mimeType, filename, msgType = payload.Message.Document.FileID, payload.Message.Document.MimeType, payload.Message.Document.FileName, "document"
+	default:
+		c.JSON(http.StatusOK, gin.H{})
+		return
+	}
+
+	var channel models.Channel
+	if res.DB.First(&channel, res.ChannelID).Error != nil {
+		c.JSON(http.StatusOK, gin.H{})
+		return
+	}
+	fileURL, resolvedMime, size, fetchErr := senders.TelegramFetchMedia(&channel, fileID, res.CompanyID)
+	if fetchErr != nil {
+		log.Printf("ERROR: descargar adjunto Telegram (canal %d): %v", res.ChannelID, fetchErr)
+		c.JSON(http.StatusOK, gin.H{})
+		return
+	}
+	if mimeType == "" {
+		mimeType = resolvedMime
+	}
+	_ = ProcessInboundMedia(res.DB, res.ChannelID, senderID, senderName, payload.Message.Caption, extID, InboundAttachment{
+		Type: msgType, FileURL: fileURL, OriginalName: filename, MimeType: mimeType, Size: size,
+	})
 	c.JSON(http.StatusOK, gin.H{})
 }
 

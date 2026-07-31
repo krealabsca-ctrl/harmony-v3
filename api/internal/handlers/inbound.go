@@ -59,24 +59,54 @@ func chUser(companyID, userID uint) string {
 	return fmt.Sprintf("company.%d.user.%d", companyID, userID)
 }
 
-// ProcessInbound crea o actualiza la conversación con el mensaje entrante y ejecuta
-// el flujo Bot-first.
+// InboundAttachment describe un adjunto multimedia ya descargado y guardado
+// localmente (ver senders.WhatsAppFetchMedia/MetaFetchMedia/TelegramFetchMedia),
+// listo para asociarse a un mensaje entrante.
+type InboundAttachment struct {
+	Type         string // "image" | "audio" | "video" | "document" | "sticker"
+	FileURL      string // "/uploads/company_<id>/attachments/..." — ruta local, no del proveedor
+	OriginalName string
+	MimeType     string
+	Size         int64
+}
+
+// ProcessInbound crea o actualiza la conversación con un mensaje de texto entrante
+// y ejecuta el flujo Bot-first. Ver processInboundMessage para el detalle del flujo.
 //
 // Cuándo se llama: desde los webhooks de cada canal (WhatsApp, Messenger, etc.) o
-// desde SimulateInbound durante pruebas. Es el punto de entrada principal para
-// cualquier mensaje que llega desde un usuario externo.
+// desde SimulateInbound durante pruebas.
+func ProcessInbound(db *gorm.DB, channelID uint, senderPhone, senderName, messageBody, externalID string) error {
+	return processInboundMessage(db, channelID, senderPhone, senderName, messageBody, externalID, nil)
+}
+
+// ProcessInboundMedia crea o actualiza la conversación con un mensaje multimedia
+// entrante (imagen/audio/video/documento) ya descargado del proveedor. caption
+// puede ir vacío (Messenger no manda caption; WhatsApp y Telegram sí).
+//
+// Cuándo se llama: desde los webhooks de cada canal al detectar un mensaje que no
+// es de texto, después de descargar el adjunto vía el paquete senders.
+func ProcessInboundMedia(db *gorm.DB, channelID uint, senderPhone, senderName, caption, externalID string, att InboundAttachment) error {
+	return processInboundMessage(db, channelID, senderPhone, senderName, caption, externalID, &att)
+}
+
+// processInboundMessage contiene el flujo común a mensajes de texto y multimedia:
+// verificar canal → crear/reusar contacto → crear/reusar conversación → deduplicar
+// por external_id → guardar el mensaje (y su adjunto, si viene) → actualizar
+// estadísticas de la conversación → notificar por WebSocket → disparar el flujo
+// Bot → Agente. att es nil para mensajes de texto.
 //
 // Parámetros:
 //   - db         : conexión GORM a la base de datos de la empresa (multi-tenant).
 //   - channelID  : ID interno del canal en Harmony por el que llegó el mensaje.
 //   - senderPhone: número de teléfono (o identificador único) del remitente.
 //   - senderName : nombre del remitente tal como lo reporta el proveedor (puede ser "").
-//   - messageBody: texto del mensaje recibido.
+//   - messageBody: texto del mensaje, o el caption si att no es nil (puede ser "").
 //   - externalID : ID externo del mensaje en la plataforma origen (usado para deduplicar).
+//   - att        : adjunto ya descargado, o nil para un mensaje de texto plano.
 //
 // Retorna: error si alguna operación de base de datos crítica falla; nil si todo
 // se procesó correctamente (incluyendo el caso de mensaje duplicado ignorado).
-func ProcessInbound(db *gorm.DB, channelID uint, senderPhone, senderName, messageBody, externalID string) error {
+func processInboundMessage(db *gorm.DB, channelID uint, senderPhone, senderName, messageBody, externalID string, att *InboundAttachment) error {
 	// 1. Verificar que el canal existe
 	var channel models.Channel
 	if err := db.First(&channel, channelID).Error; err != nil {
@@ -144,6 +174,10 @@ func ProcessInbound(db *gorm.DB, channelID uint, senderPhone, senderName, messag
 		}
 	}
 
+	msgType := "text"
+	if att != nil {
+		msgType = att.Type
+	}
 	msg := models.Message{
 		ConversationID: conv.ID,
 		Body:           messageBody,
@@ -152,7 +186,7 @@ func ProcessInbound(db *gorm.DB, channelID uint, senderPhone, senderName, messag
 		// "received" no es un valor válido y hacía fallar el INSERT en silencio (el error se
 		// descarta en el llamador), por lo que ningún mensaje entrante se guardaba nunca.
 		Status:     "delivered",
-		Type:       "text",
+		Type:       msgType,
 		ExternalID: externalID,
 	}
 	if err := db.Create(&msg).Error; err != nil {
@@ -167,6 +201,22 @@ func ProcessInbound(db *gorm.DB, channelID uint, senderPhone, senderName, messag
 			}
 		}
 		return fmt.Errorf("crear mensaje: %w", err)
+	}
+
+	// Si el mensaje trae un adjunto ya descargado, crear el registro vinculado y
+	// asignarlo a msg.Attachments ANTES del broadcast: el frontend inserta el
+	// payload del WebSocket directo en su caché sin volver a pedir el mensaje,
+	// así que si attachments viaja vacío el adjunto no se ve hasta recargar.
+	if att != nil {
+		attachment := models.MessageAttachment{
+			MessageID:    msg.ID,
+			AzurePath:    att.FileURL,
+			OriginalName: att.OriginalName,
+			MimeType:     att.MimeType,
+			Size:         att.Size,
+		}
+		db.Create(&attachment)
+		msg.Attachments = []models.MessageAttachment{attachment}
 	}
 
 	// 5. Actualizar estadísticas de la conversación.
