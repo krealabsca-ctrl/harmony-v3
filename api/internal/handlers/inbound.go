@@ -148,9 +148,12 @@ func ProcessInbound(db *gorm.DB, channelID uint, senderPhone, senderName, messag
 		ConversationID: conv.ID,
 		Body:           messageBody,
 		Direction:      "inbound",
-		Status:         "received",
-		Type:           "text",
-		ExternalID:     externalID,
+		// El check constraint de "messages" solo permite pending/sent/delivered/read/failed.
+		// "received" no es un valor válido y hacía fallar el INSERT en silencio (el error se
+		// descarta en el llamador), por lo que ningún mensaje entrante se guardaba nunca.
+		Status:     "delivered",
+		Type:       "text",
+		ExternalID: externalID,
 	}
 	if err := db.Create(&msg).Error; err != nil {
 		// M-08: dos entregas concurrentes del mismo mensaje pueden pasar ambas el
