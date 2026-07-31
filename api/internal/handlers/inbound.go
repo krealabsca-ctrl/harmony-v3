@@ -171,7 +171,12 @@ func ProcessInbound(db *gorm.DB, channelID uint, senderPhone, senderName, messag
 
 	// 5. Actualizar estadísticas de la conversación.
 	// Se incrementa unread_count para que la bandeja muestre el badge de mensajes sin leer.
-	db.Exec(`UPDATE conversations SET last_message_at = NOW(), unread_count = unread_count + 1 WHERE id = ?`, conv.ID)
+	// window_expires_at se renueva a 24h desde ahora: es la ventana de servicio al cliente
+	// de WhatsApp (Meta solo permite texto libre si el cliente escribió en las últimas 24h;
+	// pasado ese punto solo se pueden enviar plantillas). Antes de este fix nada escribía
+	// esta columna, por lo que quedaba NULL para siempre y el envío de texto libre se
+	// bloqueaba con "El cliente aún no ha iniciado conversación" aunque sí hubiera escrito.
+	db.Exec(`UPDATE conversations SET last_message_at = NOW(), unread_count = unread_count + 1, window_expires_at = NOW() + INTERVAL '24 hours' WHERE id = ?`, conv.ID)
 
 	// 6. Broadcast WebSocket — notificar bandeja de entrada y sala de conversación.
 	// C-01: los canales van namespaceados por empresa para no filtrar datos entre tenants.
