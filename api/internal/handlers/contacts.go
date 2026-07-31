@@ -274,32 +274,42 @@ func UploadAttachment(c *gin.Context) {
 	// (multipart) a la API del proveedor. Igual que SendMessage con texto: el
 	// mensaje queda guardado aunque el envío falle, solo cambia el status.
 	var sendErr error
+	var sendResult senders.SendResult
 	if conv.Channel != nil && conv.Contact != nil {
 		to := conv.Contact.Phone
 		switch conv.Channel.Type {
 		case models.ChannelWhatsApp:
-			_, sendErr = senders.SendWhatsAppMedia(conv.Channel, to, msgType, savePath, mimeType, "", header.Filename)
+			sendResult, sendErr = senders.SendWhatsAppMedia(conv.Channel, to, msgType, savePath, mimeType, "", header.Filename)
 		case models.ChannelMessenger:
 			attachType := msgType
 			if attachType == "document" {
 				attachType = "file"
 			}
-			_, sendErr = senders.SendMessengerMedia(conv.Channel, to, attachType, savePath, mimeType, header.Filename)
+			sendResult, sendErr = senders.SendMessengerMedia(conv.Channel, to, attachType, savePath, mimeType, header.Filename)
 		case models.ChannelInstagram:
 			attachType := msgType
 			if attachType == "document" {
 				attachType = "file"
 			}
-			_, sendErr = senders.SendInstagramMedia(conv.Channel, to, attachType, savePath, mimeType, header.Filename)
+			sendResult, sendErr = senders.SendInstagramMedia(conv.Channel, to, attachType, savePath, mimeType, header.Filename)
 		case models.ChannelTelegram:
-			_, sendErr = senders.SendTelegramMedia(conv.Channel, to, msgType, savePath, mimeType, header.Filename)
+			sendResult, sendErr = senders.SendTelegramMedia(conv.Channel, to, msgType, savePath, mimeType, header.Filename)
 		}
 	}
 
+	// FIX: sin guardar el external_id (wamid/mid) que devuelve el proveedor, los
+	// webhooks de estado (entregado/leído) nunca pueden encontrar este mensaje por
+	// más que lleguen — UpdateMessageStatus busca por external_id, y quedaba vacío
+	// para todo adjunto saliente. Los checks de texto sí funcionaban porque
+	// SendMessage (conversations.go) ya guardaba este valor; aquí faltaba.
 	if sendErr != nil {
 		log.Printf("ERROR: enviar adjunto (canal %d, tipo %s): %v", conv.ChannelID, msgType, sendErr)
 		db.Model(&msg).Update("status", "failed")
 		msg.Status = "failed"
+	} else if sendResult.ExternalID != "" {
+		db.Model(&msg).Updates(map[string]any{"status": "sent", "external_id": sendResult.ExternalID})
+		msg.ExternalID = sendResult.ExternalID
+		msg.Status = "sent"
 	}
 
 	// Actualizar last_message_at de la conversación para mantener la bandeja ordenada.
