@@ -272,7 +272,18 @@ func WhatsAppHandle(c *gin.Context) {
 						ID     string `json:"id"`
 						Status string `json:"status"`
 					} `json:"statuses"`
+					// Campos del aviso message_template_status_update: Meta lo emite
+					// cuando una plantilla cambia de estado (aprobada, rechazada,
+					// deshabilitada). Es lo que permite reflejar el estado real sin
+					// estar consultando a Meta.
+					Event               string `json:"event"`
+					MessageTemplateID   int64  `json:"message_template_id"`
+					MessageTemplateName string `json:"message_template_name"`
+					Reason              string `json:"reason"`
 				} `json:"value"`
+				// Field identifica el tipo de aviso: "messages" para mensajes y
+				// estados de entrega, "message_template_status_update" para plantillas.
+				Field string `json:"field"`
 			} `json:"changes"`
 		} `json:"entry"`
 	}
@@ -284,6 +295,15 @@ func WhatsAppHandle(c *gin.Context) {
 
 	for _, entry := range payload.Entry {
 		for _, change := range entry.Changes {
+			// Aviso de cambio de estado de una plantilla (aprobada/rechazada por Meta).
+			// Llega por el mismo webhook que los mensajes pero con otro "field", así que
+			// se atiende antes y se sigue con el resto de changes.
+			if change.Field == "message_template_status_update" {
+				applyTemplateStatusUpdate(res.DB, res.CompanyID,
+					change.Value.MessageTemplateName, change.Value.Event, change.Value.Reason)
+				continue
+			}
+
 			for _, wMsg := range change.Value.Messages {
 				senderName := wMsg.From
 				for _, ct := range change.Value.Contacts {

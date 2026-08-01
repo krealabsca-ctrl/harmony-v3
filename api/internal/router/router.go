@@ -225,6 +225,14 @@ func Setup() *gin.Engine {
 				sup.POST("/templates", handlers.CreateTemplate)
 				sup.PUT("/templates/:id", handlers.UpdateTemplate)
 				sup.DELETE("/templates/:id", handlers.DeleteTemplate)
+				// Envía a Meta una plantilla que quedó en borrador o cuyo envío falló.
+				// El frontend ya llamaba esta ruta ("Enviar a Meta") pero no existía: 404.
+				sup.POST("/templates/:id/submit", handlers.SubmitTemplate)
+				// Reconcilia el estado con Meta bajo demanda (respaldo del webhook).
+				sup.POST("/templates/:id/sync", handlers.SyncTemplateStatus)
+				// Alterna la visibilidad de la plantilla para los agentes. Igual que
+				// /submit, el frontend ya la llamaba y tampoco existía.
+				sup.POST("/templates/:id/toggle-agent-visible", handlers.ToggleAgentVisible)
 				sup.GET("/campaigns", handlers.ListCampaigns)
 				sup.POST("/campaigns", handlers.CreateCampaign)
 				sup.GET("/campaigns/:id", handlers.GetCampaign)

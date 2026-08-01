@@ -320,6 +320,7 @@ func (c *client) readPump() {
 //	company.{companyID}.inbox
 //	company.{companyID}.conversation.{convID}
 //	company.{companyID}.department.{deptID}
+//	company.{companyID}.templates
 //	company.{companyID}.user.{userID}   (además debe coincidir con el propio userID)
 func (c *client) isChannelAllowed(channel string) bool {
 	prefix := fmt.Sprintf("company.%d.", c.companyID)
@@ -334,8 +335,12 @@ func (c *client) isChannelAllowed(channel string) bool {
 		return err == nil && uint(uid) == c.userID
 	}
 
-	// Resto de canales permitidos dentro de la empresa (allowlist explícita)
+	// Resto de canales permitidos dentro de la empresa (allowlist explícita).
+	// OJO: un canal que no esté acá se rechaza EN SILENCIO — el cliente cree que
+	// quedó suscrito y nunca recibe nada. Al agregar un canal nuevo en el backend
+	// hay que sumarlo también a esta lista.
 	return sub == "inbox" ||
+		sub == "templates" ||
 		strings.HasPrefix(sub, "conversation.") ||
 		strings.HasPrefix(sub, "department.")
 }

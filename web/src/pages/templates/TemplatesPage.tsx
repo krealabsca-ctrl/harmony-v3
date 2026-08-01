@@ -4,6 +4,7 @@ import { Plus, Pencil, Trash2, X, Loader2, Send, Eye, EyeOff } from 'lucide-reac
 import toast from 'react-hot-toast'
 import DOMPurify from 'dompurify'
 import api from '@/api/client'
+import { useWebSocket } from '@/hooks/useWebSocket'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -183,6 +184,7 @@ function useCurrentUser() {
 
 export default function TemplatesPage() {
   const qc = useQueryClient()
+  const { subscribe, onReconnect } = useWebSocket()
   const currentUser = useCurrentUser()
   const isAgent = currentUser?.role === 'agent'
 
@@ -236,10 +238,37 @@ export default function TemplatesPage() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['templates'] })
 
+  /* Estado de Meta en tiempo real.
+   *
+   * Meta avisa por webhook (message_template_status_update) cuando aprueba o rechaza
+   * una plantilla; el backend lo procesa y lo reemite por el canal `templates` de la
+   * empresa. Sin esto había que recargar la pantalla para enterarse, y como la
+   * revisión de Meta puede tardar minutos u horas, la plantilla se quedaba mostrando
+   * "Pendiente" mucho después de haber sido resuelta. */
+  useEffect(() => {
+    const unsubStatus = subscribe('templates', 'TemplateStatusUpdated', (raw: unknown) => {
+      const upd = raw as { name?: string; status?: MetaStatus; rejection_reason?: string | null }
+      invalidate()
+      if (upd.status === 'approved') toast.success(`Meta aprobó la plantilla "${upd.name}"`)
+      else if (upd.status === 'rejected') toast.error(`Meta rechazó "${upd.name}": ${upd.rejection_reason || 'sin motivo indicado'}`)
+    })
+    const unsubReconnect = onReconnect(invalidate)
+    return () => { unsubStatus(); unsubReconnect() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subscribe, onReconnect, qc])
+
   const createMutation = useMutation({
     mutationFn: (data: TemplateFormData) => api.post('/templates', data),
-    onSuccess: () => {
-      toast.success('Plantilla creada correctamente')
+    onSuccess: (res: any) => {
+      // La plantilla ahora se registra en Meta al crearla. Si Meta la rechaza no se
+      // pierde el trabajo: queda en borrador con el motivo. Hay que decirlo explícito
+      // -- un "creada correctamente" a secas era justo lo que dejaba la duda de si
+      // había llegado a Meta o no.
+      if (res?.data?.sent_to_meta === false) {
+        toast.error(res.data.message ?? 'La plantilla se guardó pero Meta no la aceptó', { duration: 9000 })
+      } else {
+        toast.success('Plantilla creada y enviada a Meta para revisión')
+      }
       closeModal()
       invalidate()
     },
