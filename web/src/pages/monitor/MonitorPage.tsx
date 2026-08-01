@@ -57,7 +57,7 @@ interface MonitorConv {
 interface MonitorCounts {
   all: number
   open: number
-  pending: number
+  unread: number
 }
 
 interface MonitorResponse {
@@ -306,10 +306,10 @@ export default function MonitorPage() {
   const qc = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const isSupervisor = user?.role === 'supervisor'
-  const { subscribe } = useWebSocket()
+  const { subscribe, onReconnect } = useWebSocket()
 
   // Filters
-  const [tab, setTab] = useState<'' | 'open' | 'pending'>('')
+  const [tab, setTab] = useState<'' | 'open' | 'unread'>('')
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [agentFilter, setAgentFilter] = useState('')
@@ -384,21 +384,26 @@ export default function MonitorPage() {
     }
   }, [messages.length, selectedId])
 
-  // WebSocket invalidate
-  const deptIds = departments.map((d) => d.id)
-  const deptIdsRef = useRef(deptIds)
-  useEffect(() => { deptIdsRef.current = deptIds }, [deptIds])
-
+  /* Tiempo real del monitor.
+   *
+   * Antes esto se suscribía a `department.{id}` con los eventos ConversationCreated /
+   * ConversationClosed. El backend NUNCA emite a canales de departamento ni publica
+   * esos dos eventos (los únicos que existen son MessageReceived y ConversationUpdated
+   * sobre el canal `inbox` de la empresa), así que las tres suscripciones quedaban
+   * colgadas de eventos inexistentes y el monitor solo se movía con el polling de 30s.
+   * Se pasa al canal `inbox`, que es el que el backend sí publica. */
   useEffect(() => {
-    const unsubs: (() => void)[] = []
     const invalidate = () => qc.invalidateQueries({ queryKey: ['monitor'] })
-    deptIdsRef.current.forEach((id) => {
-      unsubs.push(subscribe(`department.${id}`, 'ConversationUpdated', invalidate))
-      unsubs.push(subscribe(`department.${id}`, 'ConversationCreated', invalidate))
-      unsubs.push(subscribe(`department.${id}`, 'ConversationClosed', invalidate))
-    })
-    return () => unsubs.forEach((fn) => fn())
-  }, [departments, subscribe, qc])
+    const unsubMsg = subscribe('inbox', 'MessageReceived', invalidate)
+    const unsubUpd = subscribe('inbox', 'ConversationUpdated', invalidate)
+    return () => { unsubMsg(); unsubUpd() }
+  }, [subscribe, qc])
+
+  /* Al reconectar el socket se perdieron los eventos de la caída: recargar. */
+  useEffect(() => onReconnect(() => {
+    qc.invalidateQueries({ queryKey: ['monitor'] })
+    qc.invalidateQueries({ queryKey: ['monitor-messages'] })
+  }), [onReconnect, qc])
 
   // Invalidate messages on WS event for selected conv
   useEffect(() => {
@@ -410,7 +415,7 @@ export default function MonitorPage() {
   }, [selectedId, subscribe, qc])
 
   const convs = monitorData?.data ?? []
-  const counts = monitorData?.counts ?? { all: 0, open: 0, pending: 0 }
+  const counts = monitorData?.counts ?? { all: 0, open: 0, unread: 0 }
   const selectedConv = convs.find((c) => c.id === selectedId) ?? null
 
   const handleSelect = useCallback((id: number) => {
@@ -458,7 +463,7 @@ export default function MonitorPage() {
               [
                 { key: '', label: 'Todos', count: counts.all },
                 { key: 'open', label: 'Abiertos', count: counts.open },
-                { key: 'pending', label: 'No leídos', count: counts.pending },
+                { key: 'unread', label: 'No leídos', count: counts.unread },
               ] as { key: '' | 'open' | 'pending'; label: string; count: number }[]
             ).map(({ key, label, count }) => (
               <button

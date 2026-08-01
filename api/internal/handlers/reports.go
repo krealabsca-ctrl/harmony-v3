@@ -426,8 +426,14 @@ func Monitor(c *gin.Context) {
 	} else if agentID != "" {
 		base = base.Where("conversations.agent_id = ?", agentID)
 	}
-	if statusFilter == "open" || statusFilter == "pending" {
-		base = base.Where("conversations.status = ?", statusFilter)
+	// Las pestañas ya no separan por status: "pending" (aún sin agente asignado) se
+	// presenta como abierta, igual que en la bandeja de entrada y en Reportes -- para
+	// el usuario solo existen Abiertos y No leídos. Lo que distingue las pestañas es
+	// si la conversación tiene mensajes sin leer.
+	if statusFilter == "open" {
+		base = base.Where("conversations.unread_count = 0")
+	} else if statusFilter == "unread" {
+		base = base.Where("conversations.unread_count > 0")
 	}
 	if q != "" {
 		// Búsqueda de texto libre: requiere JOIN con contacts para filtrar por nombre y teléfono.
@@ -437,24 +443,33 @@ func Monitor(c *gin.Context) {
 			Where("conversations.case_number ILIKE ? OR ct.name ILIKE ? OR ct.phone ILIKE ?", like, like, like)
 	}
 
-	// Conteos para las pestañas (siempre sobre el scope de dept/agente, sin filtro de status)
-	// Se usa una query separada (baseCount) para que los badges de "open" y "pending"
-	// no se vean afectados por el filtro de status de la pestaña activa.
-	baseCount := db.Model(&models.Conversation{}).
-		Where("conversations.status IN ?", []models.ConversationStatus{models.ConvOpen, models.ConvPending})
-	if deptID != "" {
-		baseCount = baseCount.Where("conversations.department_id = ?", deptID)
-	}
-	if agentID == "unassigned" {
-		baseCount = baseCount.Where("conversations.agent_id IS NULL")
-	} else if agentID != "" {
-		baseCount = baseCount.Where("conversations.agent_id = ?", agentID)
+	// Conteos para las pestañas (siempre sobre el scope de dept/agente, sin el filtro
+	// de la pestaña activa, para que los badges no se afecten entre sí).
+	//
+	// Cada contador arranca de una query NUEVA. Antes se reusaba una sola instancia
+	// (`baseCount`) y se le encadenaba un .Where() por contador: GORM acumula las
+	// condiciones en el mismo Statement, así que el tercer conteo terminaba pidiendo
+	// status='open' AND status='pending' y devolvía 0 siempre.
+	countScope := func() *gorm.DB {
+		q := db.Model(&models.Conversation{}).
+			Where("conversations.status IN ?", []models.ConversationStatus{models.ConvOpen, models.ConvPending})
+		if deptID != "" {
+			q = q.Where("conversations.department_id = ?", deptID)
+		}
+		if agentID == "unassigned" {
+			q = q.Where("conversations.agent_id IS NULL")
+		} else if agentID != "" {
+			q = q.Where("conversations.agent_id = ?", agentID)
+		}
+		return q
 	}
 
-	var countAll, countOpen, countPending int64
-	baseCount.Count(&countAll)
-	baseCount.Where("conversations.status = ?", models.ConvOpen).Count(&countOpen)
-	baseCount.Where("conversations.status = ?", models.ConvPending).Count(&countPending)
+	var countAll, countOpen, countUnread int64
+	countScope().Count(&countAll)
+	// "Abiertos" = activas ya leídas (open + pending); "No leídos" = activas con
+	// mensajes pendientes de leer. Juntas suman exactamente el total, sin duplicar.
+	countScope().Where("conversations.unread_count = 0").Count(&countOpen)
+	countScope().Where("conversations.unread_count > 0").Count(&countUnread)
 
 	// Total con todos los filtros aplicados (incluye filtro de status y búsqueda q)
 	var total int64
@@ -542,9 +557,9 @@ func Monitor(c *gin.Context) {
 			"last_page": (total + perPage - 1) / perPage,
 		},
 		"counts": gin.H{
-			"all":     countAll,
-			"open":    countOpen,
-			"pending": countPending,
+			"all":    countAll,
+			"open":   countOpen,
+			"unread": countUnread,
 		},
 	})
 }
