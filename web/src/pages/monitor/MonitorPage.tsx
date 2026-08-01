@@ -7,6 +7,7 @@ import {
   Loader2,
   Lock,
   User,
+  Bot,
   Phone,
   Hash,
   Clock,
@@ -49,6 +50,7 @@ interface MonitorConv {
   channel_type: ChannelType
   agent_id: number | null
   agent_name: string
+  agent_is_bot: boolean
   department_id: number
   department_name: string
   tags: Tag[]
@@ -201,10 +203,16 @@ function ConvRow({
 
         {/* Row 3: agent + tags */}
         <div className="flex items-center gap-1 flex-wrap">
+          {/* "Bot IA" era el texto por defecto de CUALQUIER conversación sin agente
+              asignado, aunque la empresa no tuviera bot: una conversación recién
+              llegada y en cola aparecía como si el bot la estuviera atendiendo. Ahora
+              el bot solo se muestra cuando el agente asignado es realmente un bot. */}
           <span className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 truncate max-w-[100px]">
-            {conv.agent_name ? conv.agent_name : (
-              <span className="text-amber-600 font-medium">Bot IA</span>
-            )}
+            {conv.agent_name
+              ? (conv.agent_is_bot
+                  ? <span className="text-amber-600 font-medium">🤖 {conv.agent_name}</span>
+                  : conv.agent_name)
+              : <span className="italic">Sin asignar</span>}
           </span>
           {(conv.tags ?? []).slice(0, 2).map((t) => (
             <span
@@ -618,12 +626,18 @@ export default function MonitorPage() {
 
                 <div className="flex items-center gap-2">
                   {selectedConv.agent_name ? (
-                    <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400 dark:text-gray-500">
-                      <User size={12} />
+                    <div className={`flex items-center gap-1.5 text-xs ${
+                      selectedConv.agent_is_bot
+                        ? 'text-amber-600 font-medium'
+                        : 'text-gray-600 dark:text-gray-400 dark:text-gray-500'
+                    }`}>
+                      {selectedConv.agent_is_bot ? <Bot size={12} /> : <User size={12} />}
                       <span>{selectedConv.agent_name}</span>
                     </div>
                   ) : (
-                    <span className="text-xs text-amber-600 font-medium">Bot IA</span>
+                    // Sin agente no significa "atendida por el bot": significa que nadie
+                    // la está atendiendo todavía.
+                    <span className="text-xs text-gray-500 dark:text-gray-400 italic">Sin asignar</span>
                   )}
                   {isExpired(selectedConv.window_expires_at) && (
                     <span className="flex items-center gap-1 text-[10px] text-red-500 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">

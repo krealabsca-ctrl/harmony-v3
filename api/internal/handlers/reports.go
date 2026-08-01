@@ -358,6 +358,10 @@ type MonitorConvItem struct {
 	ChannelType     string       `json:"channel_type"`
 	AgentID         *uint        `json:"agent_id"`
 	AgentName       string       `json:"agent_name"`
+	// AgentIsBot distingue un agente humano de uno automatizado. Sin este dato la
+	// pantalla no podía diferenciar "atendida por el bot" de "sin agente asignado",
+	// y mostraba "Bot IA" en ambos casos.
+	AgentIsBot      bool         `json:"agent_is_bot"`
 	DepartmentID    *uint        `json:"department_id"`
 	DepartmentName  string       `json:"department_name"`
 	Tags            []models.Tag `json:"tags"`
@@ -542,6 +546,7 @@ func Monitor(c *gin.Context) {
 		if cv.Agent != nil {
 			item.AgentID = &cv.Agent.ID
 			item.AgentName = cv.Agent.Name
+			item.AgentIsBot = cv.Agent.IsBot
 		}
 		items = append(items, item)
 	}
