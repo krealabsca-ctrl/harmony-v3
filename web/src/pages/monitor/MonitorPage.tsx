@@ -464,7 +464,7 @@ export default function MonitorPage() {
                 { key: '', label: 'Todos', count: counts.all },
                 { key: 'open', label: 'Abiertos', count: counts.open },
                 { key: 'unread', label: 'No leídos', count: counts.unread },
-              ] as { key: '' | 'open' | 'pending'; label: string; count: number }[]
+              ] as { key: '' | 'open' | 'unread'; label: string; count: number }[]
             ).map(({ key, label, count }) => (
               <button
                 key={key}
