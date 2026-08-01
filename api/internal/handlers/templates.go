@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"harmony-api/internal/models"
@@ -25,6 +27,9 @@ type Template struct {
 	ID                 uint       `gorm:"primarykey" json:"id"`
 	CompanyID          uint       `gorm:"not null;index" json:"company_id"`
 	DepartmentID       *uint      `json:"department_id"`
+	// ChannelID identifica el canal concreto elegido en el formulario. NULL = la
+	// plantilla no está atada a un canal específico ("Sin canal específico").
+	ChannelID          *uint      `json:"channel_id"`
 	ChannelType        string     `json:"channel_type"`
 	Name               string     `json:"name"`
 	Category           string     `json:"category"`
@@ -70,6 +75,32 @@ func (t Template) MarshalJSON() ([]byte, error) {
 // plantillas (aprobada/rechazada por Meta), namespaceado por empresa igual que el
 // resto de canales para no filtrar datos entre tenants.
 func chTemplates(companyID uint) string { return fmt.Sprintf("company.%d.templates", companyID) }
+
+// parseOptionalID convierte el id que manda un <select> del formulario (string,
+// vacío cuando no se eligió nada) al puntero que espera el modelo.
+func parseOptionalID(v string) *uint {
+	s := strings.TrimSpace(v)
+	if s == "" || s == "0" {
+		return nil
+	}
+	n, err := strconv.ParseUint(s, 10, 64)
+	if err != nil || n == 0 {
+		return nil
+	}
+	id := uint(n)
+	return &id
+}
+
+// firstNonEmpty devuelve el primer valor no vacío; sirve para aceptar el mismo dato
+// bajo dos nombres distintos (header_type / header_format).
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
 
 // whatsappChannelFor devuelve el canal de WhatsApp activo de la empresa, que es de
 // donde salen el WABA ID y el token para hablar con la API de plantillas de Meta.
@@ -142,7 +173,82 @@ func ListTemplates(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
 	var templates []Template
 	db.Order("created_at DESC").Find(&templates)
-	c.JSON(http.StatusOK, gin.H{"data": templates})
+
+	// La tabla de la UI muestra columnas "Departamento" y "Canal" con el NOMBRE, no
+	// con el id. Antes no se enviaban y las celdas salían siempre en "—"/"Sin canal".
+	// Se resuelven con dos consultas por lote (no una por fila) y se adjuntan al
+	// JSON sin tocar el modelo, que mapea la tabla tal cual.
+	deptNames, chanNames := templateRelationNames(db, templates)
+
+	out := make([]map[string]any, 0, len(templates))
+	for _, t := range templates {
+		row := templateToMap(t)
+		if t.DepartmentID != nil {
+			if n, ok := deptNames[*t.DepartmentID]; ok {
+				row["department_name"] = n
+			}
+		}
+		if t.ChannelID != nil {
+			if n, ok := chanNames[*t.ChannelID]; ok {
+				row["channel_name"] = n
+			}
+		}
+		out = append(out, row)
+	}
+	c.JSON(http.StatusOK, gin.H{"data": out})
+}
+
+// templateRelationNames resuelve en dos consultas los nombres de los departamentos
+// y canales referenciados por el lote de plantillas, evitando N+1.
+func templateRelationNames(db *gorm.DB, templates []Template) (map[uint]string, map[uint]string) {
+	deptIDs := make([]uint, 0, len(templates))
+	chanIDs := make([]uint, 0, len(templates))
+	for _, t := range templates {
+		if t.DepartmentID != nil {
+			deptIDs = append(deptIDs, *t.DepartmentID)
+		}
+		if t.ChannelID != nil {
+			chanIDs = append(chanIDs, *t.ChannelID)
+		}
+	}
+
+	type idName struct {
+		ID   uint
+		Name string
+	}
+	deptNames := map[uint]string{}
+	if len(deptIDs) > 0 {
+		var rows []idName
+		db.Table("departments").Select("id, name").Where("id IN ?", deptIDs).Scan(&rows)
+		for _, r := range rows {
+			deptNames[r.ID] = r.Name
+		}
+	}
+	chanNames := map[uint]string{}
+	if len(chanIDs) > 0 {
+		var rows []idName
+		db.Table("channels").Select("id, name").Where("id IN ?", chanIDs).Scan(&rows)
+		for _, r := range rows {
+			chanNames[r.ID] = r.Name
+		}
+	}
+	return deptNames, chanNames
+}
+
+// templateToMap serializa la plantilla con sus alias y la devuelve como mapa, para
+// poder enriquecerla con los nombres de sus relaciones antes de responder.
+func templateToMap(t Template) map[string]any {
+	raw, _ := json.Marshal(t) // usa MarshalJSON: incluye meta_status y agent_visible
+	var m map[string]any
+	_ = json.Unmarshal(raw, &m)
+	// Valores por defecto para que el frontend no reciba undefined en estas claves.
+	if _, ok := m["department_name"]; !ok {
+		m["department_name"] = nil
+	}
+	if _, ok := m["channel_name"]; !ok {
+		m["channel_name"] = nil
+	}
+	return m
 }
 
 // ListAvailableTemplates devuelve las plantillas que un agente puede ver y usar en el inbox.
@@ -175,14 +281,24 @@ func ListAvailableTemplates(c *gin.Context) {
 
 func CreateTemplate(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
+	// El formulario manda department_id, channel_id, header_format, header_content y
+	// agent_visible. Antes esta estructura no los declaraba, así que se descartaban
+	// en silencio al deserializar: la plantilla se guardaba sin departamento ni canal
+	// y la tabla mostraba siempre "—" y "Sin canal". Los ids llegan como string
+	// (vienen de un <select>), por eso se leen como string y se convierten.
 	var req struct {
-		Name        string `json:"name" binding:"required"`
-		Body        string `json:"body" binding:"required"`
-		Category    string `json:"category"`
-		Language    string `json:"language"`
-		ChannelType string `json:"channel_type"`
-		HeaderType  string `json:"header_type"`
-		Footer      string `json:"footer"`
+		Name          string `json:"name" binding:"required"`
+		Body          string `json:"body" binding:"required"`
+		Category      string `json:"category"`
+		Language      string `json:"language"`
+		ChannelType   string `json:"channel_type"`
+		ChannelID     string `json:"channel_id"`
+		DepartmentID  string `json:"department_id"`
+		HeaderType    string `json:"header_type"`
+		HeaderFormat  string `json:"header_format"` // nombre que usa el formulario
+		HeaderContent string `json:"header_content"`
+		Footer        string `json:"footer"`
+		AgentVisible  bool   `json:"agent_visible"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
@@ -200,20 +316,24 @@ func CreateTemplate(c *gin.Context) {
 	if language == "" {
 		language = "es"
 	}
-	headerType := req.HeaderType
-	if headerType == "" {
-		headerType = "none"
-	}
+	// El formulario llama al campo "header_format"; internamente la columna es
+	// header_type. Se acepta cualquiera de los dos nombres.
+	headerType := firstNonEmpty(req.HeaderType, req.HeaderFormat, "none")
+
 	tpl := Template{
-		CompanyID:   c.GetUint("company_id"),
-		Name:        req.Name,
-		Body:        req.Body,
-		Category:    category,
-		Language:    language,
-		ChannelType: channelType,
-		HeaderType:  headerType,
-		Footer:      req.Footer,
-		Status:      "pending",
+		CompanyID:       c.GetUint("company_id"),
+		DepartmentID:    parseOptionalID(req.DepartmentID),
+		ChannelID:       parseOptionalID(req.ChannelID),
+		Name:            req.Name,
+		Body:            req.Body,
+		Category:        category,
+		Language:        language,
+		ChannelType:     channelType,
+		HeaderType:      headerType,
+		HeaderContent:   req.HeaderContent,
+		Footer:          req.Footer,
+		VisibleToAgents: req.AgentVisible,
+		Status:          "pending",
 	}
 	if err := db.Create(&tpl).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -380,13 +500,35 @@ func UpdateTemplate(c *gin.Context) {
 		Category        string `json:"category"`
 		Language        string `json:"language"`
 		ChannelType     string `json:"channel_type"`
+		ChannelID       string `json:"channel_id"`
+		DepartmentID    string `json:"department_id"`
 		HeaderType      string `json:"header_type"`
+		HeaderFormat    string `json:"header_format"`
+		HeaderContent   string `json:"header_content"`
 		Footer          string `json:"footer"`
 		// VisibleToAgents se envía como bool; se usa puntero para distinguir "no enviado" de false
 		VisibleToAgents *bool  `json:"visible_to_agents"`
+		AgentVisible    *bool  `json:"agent_visible"` // nombre que usa el formulario
 	}
 	c.ShouldBindJSON(&req)
 	updates := map[string]any{}
+	// Igual que en la creación: sin estos campos el departamento y el canal elegidos
+	// se perdían al editar.
+	if req.DepartmentID != "" {
+		updates["department_id"] = parseOptionalID(req.DepartmentID)
+	}
+	if req.ChannelID != "" {
+		updates["channel_id"] = parseOptionalID(req.ChannelID)
+	}
+	if h := firstNonEmpty(req.HeaderType, req.HeaderFormat); h != "" {
+		updates["header_type"] = h
+	}
+	if req.HeaderContent != "" {
+		updates["header_content"] = req.HeaderContent
+	}
+	if req.AgentVisible != nil {
+		updates["visible_to_agents"] = *req.AgentVisible
+	}
 	if req.Name != "" {
 		updates["name"] = req.Name
 	}
@@ -416,9 +558,53 @@ func UpdateTemplate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": tpl})
 }
 
+// DeleteTemplate elimina la plantilla en Harmony Y en Meta.
+//
+// Antes solo borraba la fila local (y de forma definitiva, no lógica: el campo
+// DeletedAt es *time.Time y no gorm.DeletedAt, así que GORM hace un DELETE real).
+// La plantilla seguía existiendo en la cuenta de WhatsApp Business ocupando un
+// espacio, y al perderse el external_template_id local quedaba huérfana: si luego
+// se creaba otra con el mismo nombre, Meta la rechazaba por duplicada sin que en
+// Harmony hubiera rastro de la original.
+//
+// El borrado en Meta va PRIMERO a propósito: si falla, la fila local se conserva y
+// se devuelve el error. Al revés se perdería la referencia y ya no habría forma de
+// eliminarla desde Harmony.
 func DeleteTemplate(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
-	id := c.Param("id")
-	db.Delete(&Template{}, id)
-	c.JSON(http.StatusNoContent, nil)
+	var tpl Template
+	if err := db.First(&tpl, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Plantilla no encontrada"})
+		return
+	}
+
+	// Solo tiene sentido llamar a Meta si la plantilla llegó a registrarse allá.
+	if tpl.ExternalTemplateID != "" {
+		ch, err := whatsappChannelFor(db)
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"message": "No se puede eliminar de Meta: " + err.Error(),
+			})
+			return
+		}
+		if err := senders.DeleteWhatsAppTemplate(ch, tpl.Name); err != nil {
+			log.Printf("no se pudo eliminar la plantilla %q en Meta: %v", tpl.Name, err)
+			c.JSON(http.StatusBadGateway, gin.H{
+				"message": "No se eliminó: Meta rechazó la operación (" + err.Error() +
+					"). La plantilla se conservó en Harmony.",
+			})
+			return
+		}
+	}
+
+	if err := db.Delete(&Template{}, tpl.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	deletedFromMeta := tpl.ExternalTemplateID != ""
+	msg := "Plantilla eliminada"
+	if deletedFromMeta {
+		msg = "Plantilla eliminada de Harmony y de Meta"
+	}
+	c.JSON(http.StatusOK, gin.H{"message": msg, "deleted_from_meta": deletedFromMeta})
 }

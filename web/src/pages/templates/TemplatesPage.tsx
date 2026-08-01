@@ -296,14 +296,18 @@ export default function TemplatesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.delete(`/templates/${id}`),
-    onSuccess: () => {
-      toast.success('Plantilla eliminada')
+    onSuccess: (res: any) => {
+      toast.success(res?.data?.deleted_from_meta
+        ? 'Plantilla eliminada de Harmony y de Meta'
+        : 'Plantilla eliminada')
       setDeleteModalOpen(false)
       setDeletingTemplate(null)
       invalidate()
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.message ?? 'Error al eliminar plantilla')
+      // Si Meta rechaza el borrado la plantilla se conserva en Harmony a propósito:
+      // el mensaje del backend explica qué pasó, así que hay que mostrarlo completo.
+      toast.error(err.response?.data?.message ?? 'Error al eliminar plantilla', { duration: 9000 })
     },
   })
 
@@ -1104,6 +1108,16 @@ export default function TemplatesPage() {
                 <span className="font-semibold">{deletingTemplate.name}</span>?
                 Esta acción no se puede deshacer.
               </p>
+              {/* El borrado ahora también elimina la plantilla en Meta. Hay que
+                  decirlo antes de confirmar: si estaba aprobada, recuperarla
+                  implica volver a crearla y esperar de nuevo la revisión. */}
+              {deletingTemplate.meta_status !== 'draft' && (
+                <p className="text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl px-3 py-2">
+                  También se eliminará de tu cuenta de WhatsApp Business en Meta.
+                  {deletingTemplate.meta_status === 'approved' &&
+                    ' Está aprobada: para volver a usarla habrá que crearla de nuevo y esperar la revisión de Meta.'}
+                </p>
+              )}
               <div className="flex items-center justify-end gap-3">
                 <button
                   type="button"

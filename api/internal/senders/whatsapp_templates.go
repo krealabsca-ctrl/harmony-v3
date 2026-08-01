@@ -241,6 +241,53 @@ func FetchWhatsAppTemplateStatus(ch *models.Channel, templateName string) (statu
 	return status, reason, nil
 }
 
+// DeleteWhatsAppTemplate elimina la plantilla de la cuenta de WhatsApp Business.
+//
+// Meta borra POR NOMBRE y elimina todos los idiomas de esa plantilla; no existe un
+// borrado por id de plantilla que sea equivalente. La operación es irreversible: si
+// estaba aprobada, recuperarla implica volver a crearla y esperar revisión de nuevo.
+//
+// Un 404 de Meta (la plantilla ya no está allá) se trata como éxito: el objetivo
+// —que no exista en Meta— ya se cumple, y fallar obligaría al usuario a quedarse
+// con una fila local que no puede borrar.
+func DeleteWhatsAppTemplate(ch *models.Channel, templateName string) error {
+	wabaID, token, err := wabaCreds(ch)
+	if err != nil {
+		return err
+	}
+	name := normalizeTemplateName(templateName)
+	if name == "" {
+		return fmt.Errorf("nombre de plantilla vacío")
+	}
+
+	return whatsappBreaker.Call(func() error {
+		apiURL := fmt.Sprintf("https://graph.facebook.com/v21.0/%s/message_templates?name=%s",
+			wabaID, url.QueryEscape(name))
+
+		req, err := http.NewRequest("DELETE", apiURL, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		client := &http.Client{Timeout: 20 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("eliminar plantilla en Meta: %w", err)
+		}
+		defer resp.Body.Close()
+
+		respBytes, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusNotFound {
+			return nil // ya no existe en Meta: objetivo cumplido
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("Meta no pudo eliminar la plantilla (%d): %s", resp.StatusCode, metaErrorMessage(respBytes))
+		}
+		return nil
+	})
+}
+
 // metaErrorMessage extrae el mensaje legible del error de Meta. Meta devuelve
 // {"error":{"message":..., "error_user_msg":...}}; error_user_msg suele ser el
 // texto pensado para mostrarle a una persona.
