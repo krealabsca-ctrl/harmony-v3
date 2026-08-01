@@ -11,7 +11,7 @@ export default function AppLayout() {
   useCompanyTheme()
   // #12: la barra lateral es un drawer en móvil. En >=md queda fija (md:static).
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const { subscribe } = useWebSocket()
+  const { subscribe, onReconnect } = useWebSocket()
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -40,6 +40,9 @@ export default function AppLayout() {
     const unsub = subscribe('inbox', 'MessageReceived', () => refetchUnread())
     return unsub
   }, [subscribe, refetchUnread])
+
+  // Al reconectar el socket se perdieron los avisos de la caída: recontar de una.
+  useEffect(() => onReconnect(() => refetchUnread()), [onReconnect, refetchUnread])
 
   useEffect(() => {
     const unread = unreadData?.unread ?? 0

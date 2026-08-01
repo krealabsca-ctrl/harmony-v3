@@ -1116,7 +1116,7 @@ function PreviousChatsModal({ contactName, contactId, currentConvId, onClose, on
  */
 export default function InboxPage() {
   const qc = useQueryClient()
-  const { subscribe } = useWebSocket()
+  const { subscribe, onReconnect } = useWebSocket()
   const navigate = useNavigate()
   const user = useAuthStore(s => s.user)
   // Solo admin y supervisor pueden reasignar conversaciones o usar la reasignación masiva
@@ -1147,13 +1147,15 @@ export default function InboxPage() {
   }, [search])
 
   /* Lista de conversaciones. El tiempo real llega por WebSocket (ver efecto más abajo);
-     el polling queda solo como respaldo por si el socket se cae — de 12s a 60s. */
+     el polling es solo el respaldo para el caso en que el socket esté caído. Estuvo en
+     60s y se sentía lento justo en ese escenario, así que baja a 20s: sigue siendo una
+     sola query liviana y acota el peor caso a un tercio. */
   const { data: convData } = useQuery({
     queryKey: ['conversations', tab, debouncedSearch],
     queryFn: () =>
       api.get('/conversations', { params: { status: tab, q: debouncedSearch || undefined } })
         .then(r => r.data as { data: Conversation[]; counts: { all: number; open: number; unread: number } }),
-    refetchInterval: 60000,
+    refetchInterval: 20000,
   })
   const convList: Conversation[] = convData?.data ?? []
   const counts = convData?.counts ?? { all: 0, open: 0, unread: 0 }
@@ -1435,6 +1437,16 @@ export default function InboxPage() {
     const unsubUpd = subscribe('inbox', 'ConversationUpdated', refreshList)
     return () => { unsubMsg(); unsubUpd() }
   }, [subscribe, qc])
+
+  /* Si el socket se cayó (suspensión del equipo, cambio de red, reinicio del backend en
+   * un deploy) los eventos de esa ventana se perdieron. Al reconectar hay que recargar
+   * lista y mensajes: sin esto la bandeja quedaba desactualizada hasta el siguiente
+   * polling, que es exactamente el "tarda demasiado en refrescarse" que se reportó. */
+  useEffect(() => onReconnect(() => {
+    qc.invalidateQueries({ queryKey: ['conversations'] })
+    qc.invalidateQueries({ queryKey: ['messages'] })
+    qc.invalidateQueries({ queryKey: ['conversation'] })
+  }), [onReconnect, qc])
 
   /* Auto-scroll al mensaje más reciente cada vez que cambia la lista de mensajes */
   useEffect(() => {

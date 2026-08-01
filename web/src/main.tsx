@@ -11,9 +11,11 @@ const queryClient = new QueryClient({
     queries: {
       retry: 1,
       staleTime: 30_000,
-      // El tiempo real llega por WebSocket; no hace falta refetch masivo cada vez
-      // que la ventana recupera el foco (reducía el tráfico al API sin aportar nada).
-      refetchOnWindowFocus: false,
+      // Volver a la pestaña es justo cuando el usuario espera ver datos al día, y es
+      // también cuando más probable es que el WebSocket haya muerto en silencio
+      // (equipo suspendido, cambio de red). Con staleTime de 30s esto no dispara un
+      // refetch en cada foco, solo cuando los datos ya llevan rato sin actualizarse.
+      refetchOnWindowFocus: true,
     },
   },
 })

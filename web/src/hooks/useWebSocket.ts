@@ -24,10 +24,17 @@ type Handler = (data: unknown) => void
 const handlers = new Map<string, Set<Handler>>()
 // Canales (ya prefijados) a los que hay que (re)suscribirse en cada (re)conexión.
 const activeChannels = new Set<string>()
+// Callbacks a ejecutar cuando el socket se RE-conecta (no en la primera conexión).
+// Mientras estuvo caído se perdieron eventos, así que quien escuche debe recargar.
+const reconnectHandlers = new Set<() => void>()
 
 let socket: WebSocket | null = null
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
 let attempts = 0
+// Guard sincrónico contra la carrera del await de /auth/ws-ticket (ver connect()).
+let connecting = false
+// Falso hasta la primera conexión exitosa: distingue "conectar" de "re-conectar".
+let everConnected = false
 
 // Prefijo de empresa del usuario actual. Superadmin (sin empresa) usa 0.
 function companyPrefix(): string {
@@ -48,19 +55,34 @@ function sendSubscribe(channel: string) {
 
 async function connect() {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return
+  // La petición del ticket es asíncrona y `socket` sigue en null durante el await.
+  // Sin este guard, los componentes que llaman a useWebSocket() a la vez (AppLayout,
+  // InboxPage, MonitorPage — y el doble montaje de StrictMode en dev) pasaban todos
+  // el chequeo de arriba y abrían un socket cada uno: se midieron 4 conexiones y 4
+  // tickets por pestaña. Solo la última quedaba en `socket`, así que las suscripciones
+  // viajaban por una conexión mientras las otras quedaban huérfanas, y el onclose de
+  // cualquiera de ellas inflaba el backoff de reconexión de todas.
+  if (connecting) return
   if (!useAuthStore.getState().user) return
+  connecting = true
   try {
     const { data } = await api.post<{ ticket: string }>('/auth/ws-ticket')
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    socket = new WebSocket(`${proto}://${window.location.host}/ws?ticket=${data.ticket}`)
+    const ws = new WebSocket(`${proto}://${window.location.host}/ws?ticket=${data.ticket}`)
+    socket = ws
 
-    socket.onopen = () => {
+    ws.onopen = () => {
+      connecting = false
       attempts = 0
       // (Re)suscribir todos los canales activos tras (re)conectar.
       activeChannels.forEach(sendSubscribe)
+      // Los eventos emitidos mientras el socket estuvo caído no se recuperan: avisar
+      // a las vistas para que recarguen y no queden mostrando datos viejos.
+      if (everConnected) reconnectHandlers.forEach(h => h())
+      everConnected = true
     }
 
-    socket.onmessage = (e) => {
+    ws.onmessage = (e) => {
       try {
         const raw: unknown = JSON.parse(e.data)
         if (!isValidWSMessage(raw)) return
@@ -71,10 +93,16 @@ async function connect() {
       }
     }
 
-    socket.onclose = scheduleReconnect
-    socket.onerror = () => socket?.close()
+    ws.onclose = () => {
+      connecting = false
+      // Solo reprogramar si este era el socket vigente; un socket viejo que se cierra
+      // no debe disparar reconexiones ni tocar el backoff del que sí está activo.
+      if (socket === ws) scheduleReconnect()
+    }
+    ws.onerror = () => ws.close()
   } catch {
     // Falló la obtención del ticket (p. ej. backend caído): reintentar con backoff.
+    connecting = false
     scheduleReconnect()
   }
 }
@@ -82,13 +110,40 @@ async function connect() {
 function scheduleReconnect() {
   if (reconnectTimeout) return // ya hay un reintento programado
   if (!useAuthStore.getState().user) return
-  // Backoff exponencial con jitter, tope de 30s. Evita martillar /auth/ws-ticket en un outage.
-  const delay = Math.min(30000, 1000 * 2 ** attempts) + Math.floor(Math.random() * 500)
+  // Backoff exponencial con jitter, tope de 10s. Evita martillar /auth/ws-ticket en un
+  // outage, pero con el tope anterior de 30s una caída breve dejaba la bandeja sin
+  // tiempo real hasta medio minuto, apoyada solo en el polling de respaldo.
+  const delay = Math.min(10000, 1000 * 2 ** attempts) + Math.floor(Math.random() * 500)
   attempts++
   reconnectTimeout = setTimeout(() => {
     reconnectTimeout = null
     if (useAuthStore.getState().user) connect()
   }, delay)
+}
+
+/*
+ * El socket muere en silencio cuando el equipo se suspende, cambia de red o el backend
+ * se reinicia (cada deploy). El navegador puede tardar en emitir 'close', y aunque lo
+ * emita el backoff haría esperar varios segundos más. Cuando el usuario vuelve a la
+ * pestaña o se recupera la red, reconectamos YA, sin backoff: es justo el momento en
+ * que espera ver la bandeja al día.
+ */
+function reconnectNow() {
+  if (!useAuthStore.getState().user) return
+  if (socket?.readyState === WebSocket.OPEN) return
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout)
+    reconnectTimeout = null
+  }
+  attempts = 0
+  connect()
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', reconnectNow)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reconnectNow()
+  })
 }
 
 function closeSocket() {
@@ -97,6 +152,8 @@ function closeSocket() {
     reconnectTimeout = null
   }
   attempts = 0
+  connecting = false
+  everConnected = false
   activeChannels.clear()
   if (socket) {
     socket.onclose = null // evitar que el cierre programe una reconexión
@@ -151,9 +208,20 @@ export function useWebSocket() {
     }
   }, [])
 
+  /*
+   * onReconnect — se ejecuta cuando el socket vuelve tras haberse caído (no en la
+   * primera conexión). Las suscripciones se restablecen solas, pero los eventos que
+   * ocurrieron durante la caída se perdieron para siempre: quien escuche acá debe
+   * recargar sus datos para no quedar mostrando una bandeja desactualizada.
+   */
+  const onReconnect = useCallback((handler: () => void) => {
+    reconnectHandlers.add(handler)
+    return () => { reconnectHandlers.delete(handler) }
+  }, [])
+
   const send = useCallback((data: unknown) => {
     if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data))
   }, [])
 
-  return { subscribe, send }
+  return { subscribe, onReconnect, send }
 }
