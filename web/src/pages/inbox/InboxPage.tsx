@@ -1137,6 +1137,7 @@ export default function InboxPage() {
   const [showEditContact, setShowEditContact] = useState(false)
   const [showPrevChats, setShowPrevChats] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)        // Para auto-scroll al último mensaje
+  const scrollBoxRef = useRef<HTMLDivElement>(null)     // Contenedor con scroll de los mensajes
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)   // Input de archivo oculto activado por el botón Paperclip
 
@@ -1472,10 +1473,46 @@ export default function InboxPage() {
     qc.invalidateQueries({ queryKey: ['conversation'] })
   }), [onReconnect, qc])
 
-  /* Auto-scroll al mensaje más reciente cada vez que cambia la lista de mensajes */
+  /* Posicionamiento en el último mensaje.
+   *
+   * Antes se hacía scrollIntoView({behavior:'smooth'}) sobre un div vacío al final.
+   * Al ABRIR un chat eso fallaba: la animación arranca antes de que terminen de
+   * cargar las imágenes y los adjuntos, el contenedor crece después y la vista
+   * quedaba a media conversación, obligando a bajar a mano.
+   *
+   * Ahora se distinguen dos situaciones:
+   *  - Al abrir un chat: salto INSTANTÁNEO al fondo, repetido tras el siguiente
+   *    pintado y cada vez que una imagen termina de cargar (que es lo que corría
+   *    el fondo hacia abajo).
+   *  - Con el chat ya abierto y un mensaje nuevo: solo se baja si el usuario ya
+   *    estaba cerca del final. Si estaba leyendo historial más arriba, arrastrarlo
+   *    al fondo sería peor que no hacer nada.
+   */
+  const chatPrevioRef = useRef<number | null>(null)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    const caja = scrollBoxRef.current
+    if (!caja) return
+
+    const abrioOtroChat = chatPrevioRef.current !== selectedId
+    chatPrevioRef.current = selectedId ?? null
+
+    const alFondo = () => { caja.scrollTop = caja.scrollHeight }
+
+    if (abrioOtroChat) {
+      alFondo()
+      requestAnimationFrame(alFondo)
+      // Las imágenes ya cacheadas no disparan 'load'; por eso el salto inmediato
+      // de arriba y este ajuste solo para las que aún están cargando.
+      const pendientes = Array.from(caja.querySelectorAll('img')).filter(i => !i.complete)
+      pendientes.forEach(img => img.addEventListener('load', alFondo, { once: true }))
+      return
+    }
+
+    const distanciaAlFondo = caja.scrollHeight - caja.scrollTop - caja.clientHeight
+    if (distanciaAlFondo < 150) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, selectedId])
 
   /* Envía el mensaje si el textarea no está vacío y la ventana no está bloqueada */
   const handleSend = useCallback(() => {
@@ -1747,7 +1784,7 @@ export default function InboxPage() {
           )}
 
           {/* Área de mensajes con scroll; el div bottomRef sirve para el auto-scroll */}
-          <div className="flex-1 overflow-y-auto px-5 py-4">
+          <div ref={scrollBoxRef} className="flex-1 overflow-y-auto px-5 py-4">
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-gray-300 dark:text-gray-600 gap-2">
                 <MessageSquare size={36} />

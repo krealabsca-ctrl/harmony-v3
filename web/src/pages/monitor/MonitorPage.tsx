@@ -327,6 +327,7 @@ export default function MonitorPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const msgsBoxRef = useRef<HTMLDivElement>(null)   // Contenedor con scroll de los mensajes
 
   // Debounce search
   useEffect(() => {
@@ -385,10 +386,34 @@ export default function MonitorPage() {
 
   const messages = messagesData?.data ?? []
 
-  // Scroll to bottom when messages change
+  /* Posicionamiento en el último mensaje (mismo criterio que la bandeja).
+   *
+   * Con scrollIntoView({behavior:'smooth'}) al abrir una conversación la animación
+   * arrancaba antes de que cargaran las imágenes; el contenedor crecía después y la
+   * vista quedaba a media conversación. Al abrir se salta al fondo de golpe y se
+   * reajusta cuando cada imagen termina de cargar; con la conversación ya abierta,
+   * solo se baja si el usuario estaba cerca del final. */
+  const convPreviaRef = useRef<number | null>(null)
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    const caja = msgsBoxRef.current
+    if (!caja) return
+
+    const abrioOtra = convPreviaRef.current !== selectedId
+    convPreviaRef.current = selectedId
+
+    const alFondo = () => { caja.scrollTop = caja.scrollHeight }
+
+    if (abrioOtra) {
+      alFondo()
+      requestAnimationFrame(alFondo)
+      Array.from(caja.querySelectorAll('img'))
+        .filter(i => !i.complete)
+        .forEach(img => img.addEventListener('load', alFondo, { once: true }))
+      return
+    }
+
+    if (caja.scrollHeight - caja.scrollTop - caja.clientHeight < 150) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [messages.length, selectedId])
 
@@ -660,7 +685,7 @@ export default function MonitorPage() {
               </div>
 
               {/* Messages area */}
-              <div className="flex-1 overflow-y-auto px-4 py-4">
+              <div ref={msgsBoxRef} className="flex-1 overflow-y-auto px-4 py-4">
                 {msgsLoading ? (
                   <div className="flex items-center justify-center py-12 text-gray-400 dark:text-gray-500 gap-2">
                     <Loader2 size={16} className="animate-spin" />
