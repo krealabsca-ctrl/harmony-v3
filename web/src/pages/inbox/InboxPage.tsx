@@ -1169,11 +1169,18 @@ export default function InboxPage() {
     refetchInterval: 30000,
   })
 
-  /* Carga el historial de mensajes de la conversación seleccionada */
+  /* Carga el historial de mensajes de la conversación seleccionada.
+   *
+   * staleTime 0 (en vez de los 30s globales): abrir un chat debe traer siempre el
+   * historial al día. Con el valor global, volver a una conversación visitada hace
+   * menos de 30s servía el caché sin pedir nada al servidor, y un mensaje llegado
+   * en ese intervalo no se veía. Acá la exactitud pesa más que ahorrar una consulta:
+   * es una sola query y solo al abrir la conversación. */
   const { data: messages = [] } = useQuery<Message[]>({
     queryKey: ['messages', selectedId],
     queryFn: () => api.get(`/conversations/${selectedId}/messages`).then(r => r.data.data ?? []),
     enabled: !!selectedId,
+    staleTime: 0,
   })
 
   /* Departamentos: caché de 60s ya que cambian con poca frecuencia */
@@ -1433,7 +1440,22 @@ export default function InboxPage() {
    * por eso se suscribe una sola vez. El polling de 60s queda solo como respaldo. */
   useEffect(() => {
     const refreshList = () => qc.invalidateQueries({ queryKey: ['conversations'] })
-    const unsubMsg = subscribe('inbox', 'MessageReceived', refreshList)
+
+    /* Además de refrescar la lista, hay que marcar como desactualizado el historial
+     * de ESA conversación. El handler que inserta el mensaje en el caché vive en el
+     * efecto de `conversation.{selectedId}`, así que solo corre si la conversación
+     * está abierta en ese momento. Si el mensaje llega mientras el agente está en la
+     * lista o en otro chat, nadie toca su caché; y como las queries tienen 30s de
+     * staleTime, al entrar al chat React Query servía el historial viejo SIN volver
+     * a pedirlo y el mensaje no aparecía hasta salir y entrar pasados esos 30s.
+     * Invalidar acá hace que abrir la conversación siempre traiga lo último. */
+    const onInboxMessage = (raw: unknown) => {
+      refreshList()
+      const convID = (raw as { conversation_id?: number })?.conversation_id
+      if (convID) qc.invalidateQueries({ queryKey: ['messages', convID] })
+    }
+
+    const unsubMsg = subscribe('inbox', 'MessageReceived', onInboxMessage)
     const unsubUpd = subscribe('inbox', 'ConversationUpdated', refreshList)
     return () => { unsubMsg(); unsubUpd() }
   }, [subscribe, qc])
