@@ -393,17 +393,19 @@ export default function MonitorPage() {
    * vista quedaba a media conversación. Al abrir se salta al fondo de golpe y se
    * reajusta cuando cada imagen termina de cargar; con la conversación ya abierta,
    * solo se baja si el usuario estaba cerca del final. */
-  const convPreviaRef = useRef<number | null>(null)
+  // Se marca la conversación como ya posicionada SOLO cuando hay mensajes: al cambiar
+  // de conversación el efecto corre primero con la lista vacía, y marcarla ahí haría
+  // que la pasada con los mensajes ya cargados se tratara como "mensaje nuevo".
+  const saltoHechoRef = useRef<number | null>(null)
   useEffect(() => {
     const caja = msgsBoxRef.current
     if (!caja) return
 
-    const abrioOtra = convPreviaRef.current !== selectedId
-    convPreviaRef.current = selectedId
-
     const alFondo = () => { caja.scrollTop = caja.scrollHeight }
 
-    if (abrioOtra) {
+    if (selectedId && saltoHechoRef.current !== selectedId) {
+      if (messages.length === 0) return // aún cargando
+      saltoHechoRef.current = selectedId
       alFondo()
       requestAnimationFrame(alFondo)
       Array.from(caja.querySelectorAll('img'))

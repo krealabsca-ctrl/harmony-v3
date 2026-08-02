@@ -1488,17 +1488,21 @@ export default function InboxPage() {
    *    estaba cerca del final. Si estaba leyendo historial más arriba, arrastrarlo
    *    al fondo sería peor que no hacer nada.
    */
-  const chatPrevioRef = useRef<number | null>(null)
+  // Guarda la conversación cuyo salto inicial YA se hizo. Es importante marcarla solo
+  // cuando hay mensajes en pantalla: al cambiar de chat el efecto corre primero con la
+  // lista todavía vacía, y si se marcara ahí, la pasada en que los mensajes sí llegan
+  // se trataría como "mensaje nuevo" y no se bajaría (fue exactamente el fallo del
+  // primer intento de este arreglo).
+  const saltoHechoRef = useRef<number | null>(null)
   useEffect(() => {
     const caja = scrollBoxRef.current
     if (!caja) return
 
-    const abrioOtroChat = chatPrevioRef.current !== selectedId
-    chatPrevioRef.current = selectedId ?? null
-
     const alFondo = () => { caja.scrollTop = caja.scrollHeight }
 
-    if (abrioOtroChat) {
+    if (selectedId && saltoHechoRef.current !== selectedId) {
+      if (messages.length === 0) return // aún cargando: esperar a la siguiente pasada
+      saltoHechoRef.current = selectedId
       alFondo()
       requestAnimationFrame(alFondo)
       // Las imágenes ya cacheadas no disparan 'load'; por eso el salto inmediato
