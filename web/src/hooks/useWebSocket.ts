@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import api from '@/api/client'
 
@@ -27,6 +27,8 @@ const activeChannels = new Set<string>()
 // Callbacks a ejecutar cuando el socket se RE-conecta (no en la primera conexión).
 // Mientras estuvo caído se perdieron eventos, así que quien escuche debe recargar.
 const reconnectHandlers = new Set<() => void>()
+// Suscriptores al estado de la conexión, para el indicador del menú lateral.
+const statusListeners = new Set<(connected: boolean) => void>()
 
 let socket: WebSocket | null = null
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
@@ -45,6 +47,17 @@ function companyPrefix(): string {
 // Añade el prefijo de empresa salvo que el canal ya venga namespaceado.
 function withPrefix(channel: string): string {
   return channel.startsWith('company.') ? channel : companyPrefix() + channel
+}
+
+// isConnected refleja si la sesión tiene ahora mismo un canal abierto con el
+// servidor: es la señal que respalda el punto de estado del menú lateral.
+function isConnected(): boolean {
+  return socket?.readyState === WebSocket.OPEN
+}
+
+function notifyStatus() {
+  const v = isConnected()
+  statusListeners.forEach(fn => fn(v))
 }
 
 function sendSubscribe(channel: string) {
@@ -80,6 +93,7 @@ async function connect() {
       // a las vistas para que recarguen y no queden mostrando datos viejos.
       if (everConnected) reconnectHandlers.forEach(h => h())
       everConnected = true
+      notifyStatus()
     }
 
     ws.onmessage = (e) => {
@@ -97,7 +111,10 @@ async function connect() {
       connecting = false
       // Solo reprogramar si este era el socket vigente; un socket viejo que se cierra
       // no debe disparar reconexiones ni tocar el backoff del que sí está activo.
-      if (socket === ws) scheduleReconnect()
+      if (socket === ws) {
+        notifyStatus()
+        scheduleReconnect()
+      }
     }
     ws.onerror = () => ws.close()
   } catch {
@@ -160,6 +177,31 @@ function closeSocket() {
     socket.close()
     socket = null
   }
+  notifyStatus()
+}
+
+/*
+ * useConnectionStatus — indica si la sesión está conectada al servidor en este
+ * momento.
+ *
+ * El punto de estado del menú lateral leía `user.is_online` del almacén de sesión,
+ * un campo que el backend nunca envió (no está en buildUserResponse): siempre valía
+ * undefined y el punto quedaba gris para todo el mundo, sin importar el estado real.
+ *
+ * Tampoco alcanzaba con agregar ese campo a la respuesta: el usuario se guarda al
+ * iniciar sesión y no se vuelve a consultar, así que habría quedado congelado en el
+ * valor del login (verde permanente, sin informar nada). Lo que sí es útil y cierto
+ * es si la conexión en vivo está activa: cuando se cae, el usuario deja de recibir
+ * mensajes al instante y los demás lo ven como desconectado.
+ */
+export function useConnectionStatus(): boolean {
+  const [connected, setConnected] = useState(isConnected)
+  useEffect(() => {
+    statusListeners.add(setConnected)
+    setConnected(isConnected()) // sincronizar por si cambió antes de suscribirse
+    return () => { statusListeners.delete(setConnected) }
+  }, [])
+  return connected
 }
 
 // M-10: cerrar el socket cuando el usuario cierra sesión (user → null).

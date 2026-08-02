@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useAuthStore } from '@/stores/authStore'
+import { useConnectionStatus } from '@/hooks/useWebSocket'
 import api from '@/api/client'
 import {
   MessageSquare, LayoutDashboard, Users, Building2, Megaphone,
@@ -19,6 +20,7 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
 
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user, isSuperAdmin, isAdmin, isSupervisor, isMercadeo, canAccessAdvertising } = useAuth()
+  const connected = useConnectionStatus()
   const navigate = useNavigate()
   const [systemConfig, setSystemConfig] = useState<{ logo_url?: string; app_name?: string } | null>(null)
 
@@ -263,9 +265,16 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
             <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white text-sm font-bold">
               {avatarInitials}
             </div>
+            {/* Estado de la conexión con el servidor. Antes leía user.is_online, un
+                campo que el backend nunca envía, así que quedaba gris siempre. Ahora
+                refleja la conexión en vivo: en gris, el usuario no está recibiendo
+                mensajes al instante y el resto lo ve como desconectado. */}
             <span
+              title={connected
+                ? 'Conectado — estás recibiendo mensajes en tiempo real'
+                : 'Sin conexión con el servidor — reconectando…'}
               className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
-                user?.is_online ? 'bg-green-400' : 'bg-gray-400'
+                connected ? 'bg-green-400' : 'bg-gray-400'
               }`}
             />
           </div>
