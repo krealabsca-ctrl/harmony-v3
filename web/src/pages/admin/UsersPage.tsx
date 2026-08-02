@@ -300,9 +300,16 @@ export default function UsersPage() {
           className="border border-gray-200 dark:border-gray-600 rounded-xl pl-3 pr-8 py-2 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)]"
         >
           <option value="">Todos los roles</option>
-          {(Object.keys(ROLE_LABELS) as Role[]).map((r) => (
-            <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-          ))}
+          {/* "Super Admin" se excluye salvo para un superadministrador: los
+              superadmin no pertenecen a la base de una empresa (viven en la del
+              sistema), así que dentro de una empresa filtrar por ese rol siempre
+              devolvía vacío. Mismo criterio que el formulario de alta, que ya
+              ocultaba esa opción a quien no es superadmin. */}
+          {(Object.keys(ROLE_LABELS) as Role[])
+            .filter((r) => r !== 'superadmin' || currentUser.isSuperAdmin)
+            .map((r) => (
+              <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+            ))}
         </select>
         <button
           onClick={openCreate}

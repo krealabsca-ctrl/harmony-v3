@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"harmony-api/internal/models"
@@ -49,14 +51,59 @@ var allowedRoles = map[string]bool{
 	"mercadeo":   true,
 }
 
+// validListRoles son los roles aceptados en el filtro de la lista de usuarios.
+// No incluye "superadmin": los superadministradores no pertenecen a la base de una
+// empresa (viven en la base del sistema), así que filtrar por ese rol acá siempre
+// daría vacío -- por eso tampoco se ofrece en el desplegable de la pantalla.
+var validListRoles = map[string]bool{
+	"agent":      true,
+	"supervisor": true,
+	"admin":      true,
+	"mercadeo":   true,
+}
+
+// ListUsers devuelve los usuarios de la empresa, con filtro por rol, búsqueda por
+// nombre/correo y paginación.
+//
+// Antes esta función IGNORABA por completo los parámetros de la petición: el
+// desplegable de rol y el buscador de la pantalla de Usuarios enviaban `role` y
+// `search`, pero acá nunca se leían, así que la lista devolvía siempre lo mismo y
+// los filtros parecían no hacer nada. `page` además estaba fijo en 1, de modo que
+// paginar tampoco tenía efecto y la respuesta no incluía last_page, que es lo que
+// la pantalla necesita para dibujar los controles.
 func ListUsers(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
 
-	// FIX: paginación + límite para evitar dumps completos de la tabla
-	page := 1
-	perPage := 50
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	const perPage = 50
+
+	q := db.Model(&models.User{})
+
+	// Filtro por rol. Se valida contra la lista de roles conocidos para no permitir
+	// que un valor arbitrario en la URL se cuele a la consulta.
+	if role := strings.TrimSpace(c.Query("role")); role != "" {
+		if !validListRoles[role] {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "Rol no válido"})
+			return
+		}
+		q = q.Where("role = ?", role)
+	}
+
+	// Búsqueda por nombre o correo, insensible a mayúsculas.
+	if search := strings.TrimSpace(c.Query("search")); search != "" {
+		like := "%" + search + "%"
+		q = q.Where("name ILIKE ? OR email ILIKE ?", like, like)
+	}
+
+	var total int64
+	q.Count(&total)
+
 	var users []models.User
-	if err := db.Order("created_at DESC").Limit(perPage).Offset((page-1)*perPage).Find(&users).Error; err != nil {
+	if err := q.Order("created_at DESC").Limit(perPage).Offset((page - 1) * perPage).
+		Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error al obtener usuarios"})
 		return
 	}
@@ -64,7 +111,18 @@ func ListUsers(c *gin.Context) {
 	for i, u := range users {
 		dtos[i] = toUserDTO(u)
 	}
-	c.JSON(http.StatusOK, gin.H{"data": dtos})
+
+	lastPage := int((total + perPage - 1) / perPage)
+	if lastPage < 1 {
+		lastPage = 1
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data":         dtos,
+		"total":        total,
+		"per_page":     perPage,
+		"current_page": page,
+		"last_page":    lastPage,
+	})
 }
 
 // ListAgents — accessible to all operational roles (for transfer modal / inbox)
