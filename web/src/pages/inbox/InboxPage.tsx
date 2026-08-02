@@ -1598,8 +1598,8 @@ export default function InboxPage() {
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 {initials(conv.contact?.name ?? 'NN')}
               </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-nowrap sm:flex-wrap min-w-0">
                   <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
                     {conv.contact?.name ?? 'Sin nombre'}
                   </p>
@@ -1617,24 +1617,27 @@ export default function InboxPage() {
                     </span>
                   )}
                 </div>
-                {/* Esta fila usa flex-wrap: en móvil todas estas etiquetas juntas se
-                  * repartían en varias líneas y estiraban la cabecera. Se dejan solo
-                  * las accionables (canal, estado y ventana de 24h); el número de caso
-                  * y el agente aparecen a partir de sm, donde ya hay ancho. */}
-                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                {/* En móvil esta fila NO se envuelve: con flex-wrap y el poco ancho
+                  * que queda, cada etiqueta caía en su propia línea y esta sola fila
+                  * llegaba a medir 81px de alto. Sin envolver, lo que no entra se
+                  * recorta y la cabecera se mantiene compacta. Desde sm vuelve a
+                  * envolverse, que es cuando hay ancho para que se vea bien.
+                  * El número de caso y el agente solo aparecen desde sm. */}
+                <div className="flex items-center gap-1.5 mt-0.5 flex-nowrap sm:flex-wrap overflow-hidden">
                   <span className="hidden sm:inline text-[10px] font-mono text-gray-400 dark:text-gray-500">{conv.case_number}</span>
                   {conv.channel && (
-                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex-shrink-0">
                       <span className="inline-flex items-center justify-center w-3 h-3 rounded-full"
                         style={{ backgroundColor: CHANNEL_BG[conv.channel.type] ?? '#6b7280' }}>
                         <ChannelIcon type={conv.channel.type} size={8} color="white" />
                       </span>
-                      {conv.channel.name}
+                      {/* En móvil basta el color del canal; el nombre ocupa demasiado */}
+                      <span className="hidden sm:inline">{conv.channel.name}</span>
                     </span>
                   )}
                   {/* Solo dos estados visibles: Abierto (activa) y Cerrado.
                       'pending' se muestra como Abierto, igual que en la lista. */}
-                  <span className={`text-[10px] px-1.5 py-0 rounded font-medium ${
+                  <span className={`text-[10px] px-1.5 py-0 rounded font-medium flex-shrink-0 ${
                     conv.status === 'closed'
                       ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
                       : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
