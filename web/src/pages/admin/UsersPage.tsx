@@ -25,6 +25,7 @@ interface User {
   department_id: number | null
   department_name: string | null
   is_online: boolean
+  is_active: boolean
   can_campaigns: boolean
   can_advertising: boolean
   open_conversations_count: number
@@ -190,6 +191,23 @@ export default function UsersPage() {
     onError: (err: any) => {
       toast.error(err.response?.data?.message ?? 'Error al eliminar usuario')
     },
+  })
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: (id: number) => api.post(`/admin/users/${id}/toggle-active`),
+    onSuccess: (res: any) => {
+      const u = res?.data?.data
+      const liberadas = res?.data?.released_conversations ?? 0
+      if (u && !u.is_active) {
+        toast.success(liberadas > 0
+          ? `Usuario desactivado. Se liberaron ${liberadas} conversación(es) a la cola común.`
+          : 'Usuario desactivado. Conserva todo su historial.')
+      } else {
+        toast.success('Usuario activado')
+      }
+      invalidate()
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message ?? 'Error al cambiar el estado'),
   })
 
   const toggleCampaignsMutation = useMutation({
@@ -419,20 +437,31 @@ export default function UsersPage() {
                       {user.department_name ?? <span className="text-gray-300">—</span>}
                     </td>
 
-                    {/* Online status */}
+                    {/* Estado. Son dos cosas distintas: "inactivo" es una decisión
+                        administrativa (la cuenta está de baja y no puede entrar),
+                        mientras que "conectado/desconectado" es si tiene sesión
+                        abierta ahora. En una cuenta inactiva lo segundo no aporta
+                        nada, así que se muestra solo el estado de la cuenta. */}
                     <td className="px-4 py-4">
-                      <span
-                        className={`inline-flex items-center gap-1.5 text-xs font-medium ${
-                          user.is_online ? 'text-green-600' : 'text-gray-400 dark:text-gray-500'
-                        }`}
-                      >
+                      {!user.is_active ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                          Inactivo
+                        </span>
+                      ) : (
                         <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            user.is_online ? 'bg-green-500' : 'bg-gray-300'
+                          className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                            user.is_online ? 'text-green-600' : 'text-gray-400 dark:text-gray-500'
                           }`}
-                        />
-                        {user.is_online ? 'En línea' : 'Desconectado'}
-                      </span>
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              user.is_online ? 'bg-green-500' : 'bg-gray-300'
+                            }`}
+                          />
+                          {user.is_online ? 'En línea' : 'Desconectado'}
+                        </span>
+                      )}
                     </td>
 
                     {/* Actions */}
@@ -467,6 +496,26 @@ export default function UsersPage() {
                             }`}
                           >
                             Campañas
+                          </button>
+                        )}
+
+                        {/* Activar / desactivar. Es la alternativa NO destructiva a
+                            eliminar: la cuenta queda de baja pero conserva todo su
+                            historial y sus chats. No se ofrece sobre uno mismo. */}
+                        {user.id !== currentUser.user?.id && (
+                          <button
+                            onClick={() => toggleActiveMutation.mutate(user.id)}
+                            disabled={toggleActiveMutation.isPending}
+                            title={user.is_active
+                              ? 'Desactivar: no podrá iniciar sesión ni recibir conversaciones. Conserva su historial.'
+                              : 'Activar: podrá volver a iniciar sesión y recibir conversaciones.'}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                              user.is_active
+                                ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400'
+                                : 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                            }`}
+                          >
+                            {user.is_active ? 'Desactivar' : 'Activar'}
                           </button>
                         )}
 

@@ -20,6 +20,7 @@ type userDTO struct {
 	Email                string     `json:"email"`
 	Role                 string     `json:"role"`
 	IsOnline             bool       `json:"is_online"`
+	IsActive             bool       `json:"is_active"`
 	DepartmentID         *uint      `json:"department_id"`
 	CanSendCampaigns     bool       `json:"can_send_campaigns"`
 	CanAccessAdvertising bool       `json:"can_access_advertising"`
@@ -35,6 +36,7 @@ func toUserDTO(u models.User) userDTO {
 		Email:                u.Email,
 		Role:                 string(u.Role),
 		IsOnline:             online,
+		IsActive:             u.IsActive,
 		DepartmentID:         u.DepartmentID,
 		CanSendCampaigns:     u.CanSendCampaigns,
 		CanAccessAdvertising: u.CanAccessAdvertisingModule(),
@@ -277,6 +279,63 @@ func DeleteUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":                "Usuario eliminado",
 		"released_conversations": openCount,
+	})
+}
+
+// ToggleActive activa o desactiva un usuario. A diferencia de eliminarlo, esto NO
+// destruye nada: conserva su historial y sus conversaciones, solo le impide entrar
+// al sistema y deja de considerarlo para la autoasignación.
+//
+// Al desactivar se liberan sus conversaciones activas a la cola común (igual que al
+// eliminar), para que no queden atrapadas en la bandeja de alguien que ya no entra.
+// Las conversaciones cerradas NO se tocan: son su historial.
+//
+// Responde a: POST /admin/users/:id/toggle-active
+func ToggleActive(c *gin.Context) {
+	db := c.MustGet("db").(*gorm.DB)
+	id := c.Param("id")
+
+	var user models.User
+	if err := db.First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Usuario no encontrado"})
+		return
+	}
+
+	// Un admin no puede desactivarse a sí mismo: se quedaría fuera del sistema sin
+	// nadie que pueda revertirlo desde su propia sesión.
+	if actorID, ok := c.Get("user_id"); ok {
+		if uid, isUint := actorID.(uint); isUint && uid == user.ID && user.IsActive {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"message": "No podés desactivar tu propia cuenta.",
+			})
+			return
+		}
+	}
+
+	nuevoEstado := !user.IsActive
+	var liberadas int64
+	if !nuevoEstado {
+		res := db.Model(&models.Conversation{}).
+			Where("agent_id = ? AND status IN ('open','pending')", user.ID).
+			Updates(map[string]any{"agent_id": nil, "status": "pending"})
+		liberadas = res.RowsAffected
+	}
+
+	// Al desactivar también se marca desconectado: si tenía sesión abierta, deja de
+	// figurar como disponible para el resto del equipo.
+	updates := map[string]any{"is_active": nuevoEstado}
+	if !nuevoEstado {
+		updates["is_online"] = false
+	}
+	db.Model(&user).Updates(updates)
+	user.IsActive = nuevoEstado
+	if !nuevoEstado {
+		user.IsOnline = false
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":                   toUserDTO(user),
+		"released_conversations": liberadas,
 	})
 }
 

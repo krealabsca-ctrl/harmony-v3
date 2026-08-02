@@ -259,6 +259,8 @@ func Setup() *gin.Engine {
 				adm.PUT("/admin/users/:id", handlers.UpdateUser)
 				adm.DELETE("/admin/users/:id", handlers.DeleteUser)
 				// Permisos especiales por usuario
+				// Activa/desactiva la cuenta sin borrarla (conserva todo su historial)
+				adm.POST("/admin/users/:id/toggle-active", handlers.ToggleActive)
 				adm.POST("/admin/users/:id/toggle-campaigns", handlers.ToggleCampaigns)
 				adm.POST("/admin/users/:id/toggle-advertising", handlers.ToggleAdvertising)
 				// Gestión de departamentos

@@ -104,6 +104,18 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	// Usuario desactivado: la contraseña es correcta, pero la cuenta está de baja.
+	// Se responde con un mensaje distinto a propósito -- no es un caso de seguridad
+	// (quien escribe ya demostró conocer la contraseña) y decirle "credenciales
+	// incorrectas" lo dejaría intentando cambiar la clave sin entender qué pasa.
+	if !user.IsActive {
+		c.JSON(http.StatusForbidden, gin.H{
+			"message":    "Tu cuenta está desactivada. Contactá al administrador.",
+			"error_code": "account_inactive",
+		})
+		return
+	}
+
 	// Marcar online
 	companyDB.Model(&user).Updates(map[string]any{"is_online": true, "last_seen_at": time.Now()})
 

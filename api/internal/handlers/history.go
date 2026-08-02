@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -107,9 +108,42 @@ func DeleteHistoryConversations(c *gin.Context) {
 		return
 	}
 
-	// Delete messages, then conversations
-	db.Where("conversation_id IN ?", convIDs).Delete(&models.Message{})
-	result := db.Where("id IN ?", convIDs).Delete(&models.Conversation{})
+	// Se borra el CONTENIDO de los chats (mensajes y adjuntos) pero se conserva la
+	// fila de la conversación.
+	//
+	// Antes se borraban también las conversaciones, y con eso desaparecían los
+	// reportes de ese periodo: Resumen, Conversaciones, Agentes, Por Agente y Por
+	// Tags se calculan todos sobre la tabla conversations (no sobre messages), así
+	// que al eliminarlas los históricos quedaban en cero de forma irreversible.
+	//
+	// Conservando la conversación se cumplen las dos cosas a la vez: la información
+	// sensible desaparece y las estadísticas siguen cuadrando.
+	var borrados int64
+	var attIDs []uint
+	db.Table("message_attachments").
+		Joins("JOIN messages ON messages.id = message_attachments.message_id").
+		Where("messages.conversation_id IN ?", convIDs).
+		Pluck("message_attachments.id", &attIDs)
+	if len(attIDs) > 0 {
+		db.Exec("DELETE FROM message_attachments WHERE id IN ?", attIDs)
+	}
 
-	c.JSON(http.StatusOK, gin.H{"deleted": result.RowsAffected})
+	res := db.Where("conversation_id IN ?", convIDs).Delete(&models.Message{})
+	borrados = res.RowsAffected
+
+	// Marca en la conversación que su contenido fue purgado, para que el chat no
+	// aparezca simplemente vacío sin explicación.
+	db.Model(&models.Conversation{}).Where("id IN ?", convIDs).
+		Updates(map[string]any{
+			"unread_count":    0,
+			"resolution_note": "Mensajes eliminados por depuración de historial",
+		})
+
+	c.JSON(http.StatusOK, gin.H{
+		"deleted":                borrados,
+		"conversations_affected": len(convIDs),
+		"message": fmt.Sprintf(
+			"Se eliminaron %d mensajes de %d conversaciones. Las conversaciones se conservan para que los reportes históricos no se alteren.",
+			borrados, len(convIDs)),
+	})
 }

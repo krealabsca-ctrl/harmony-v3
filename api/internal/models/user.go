@@ -71,6 +71,12 @@ type User struct {
 	// true = conectado; false = desconectado. Se actualiza en tiempo real via WebSocket.
 	IsOnline bool `gorm:"default:false" json:"is_online"`
 
+	// IsActive distingue "de baja temporal" de "eliminado". Un usuario inactivo
+	// conserva todo su historial pero no puede iniciar sesión ni recibir
+	// conversaciones nuevas por autoasignación. Sirve para vacaciones, cambios de
+	// puesto o salidas, sin tener que borrarlo (que es destructivo).
+	IsActive bool `gorm:"default:true" json:"is_active"`
+
 	// LastSeenAt registra la última vez que el usuario estuvo activo en la plataforma.
 	// nil = el usuario nunca ha iniciado sesión.
 	LastSeenAt *time.Time `json:"last_seen_at"`

@@ -546,78 +546,81 @@ func buildBotMessages(db *gorm.DB, convID uint, maxChars int) []anthropicMsg {
 	return msgs
 }
 
-// assignToAgent busca el mejor agente disponible y asigna la conversación abierta.
+// assignToAgent decide a quién le queda la conversación cuando llega un mensaje.
 //
-// Lógica de prioridad:
-//  1. Si la conversación ya tiene un agente asignado y ese agente sigue activo
-//     (no eliminado), se mantiene la asignación y se marca la conversación como "open".
-//  2. Si el agente previo fue eliminado, se limpia el campo agent_id y se busca uno nuevo.
-//  3. Se busca un agente online del departamento de la conversación/canal.
-//  4. Si ninguno está online, se toma cualquier agente del departamento.
-//  5. Si no hay agentes disponibles, la conversación queda en "pending" para que el
-//     sistema de auto-asignación la tome cuando un agente se conecte.
+// Reglas:
 //
-// Cuándo se llama: desde runBotFlow cuando el bot no puede (o no debe) responder.
+//  1. Si ya la venía atendiendo un agente y ese agente sigue disponible (existe, no
+//     está eliminado y está activo), la conversación SE QUEDA CON ÉL aunque esté
+//     desconectado. La encontrará esperándolo al iniciar sesión. La continuidad con
+//     la misma persona pesa más que repartir el mensaje a quien esté conectado.
 //
-// Parámetros:
-//   - db  : conexión GORM a la base de datos de la empresa.
-//   - conv: puntero a la conversación que debe asignarse.
+//  2. Si ese agente fue eliminado o desactivado, la conversación queda SIN AGENTE en
+//     la bandeja, para que cualquier agente se la autoasigne. No se reasigna sola a
+//     otra persona: el mensaje entra a la cola común.
+//
+//  3. Si la conversación es nueva (nunca tuvo agente), se asigna a un agente activo
+//     que esté conectado. Si no hay ninguno conectado queda en la cola común, sin
+//     asignar, para que la tome quien entre.
+//
+// Cuándo se llama: al procesar un mensaje entrante, ya sea porque el bot está
+// deshabilitado o porque decidió derivar a un humano.
 func assignToAgent(db *gorm.DB, conv *models.Conversation, companyID uint) {
-	// ¿Ya tiene agente asignado y sigue activo?
+	// ── Regla 1 y 2: la conversación ya tenía dueño ──────────────────────────
 	if conv.AgentID != nil {
-		var existing models.User
-		db.First(&existing, conv.AgentID)
-		if existing.ID != 0 && existing.DeletedAt.Time.IsZero() {
-			// Agente sigue activo — mantener asignación y pasar la conversación a "open".
+		var previo models.User
+		// Unscoped + chequeo manual de deleted_at: hace falta distinguir "el agente
+		// no existe" de "existe pero fue eliminado", y con el scope por defecto de
+		// GORM los eliminados ni siquiera se devuelven.
+		db.Unscoped().First(&previo, conv.AgentID)
+
+		disponible := previo.ID != 0 && !previo.DeletedAt.Valid && previo.IsActive
+		if disponible {
+			// Sigue siendo suya, esté o no conectado.
 			db.Model(conv).Update("status", "open")
 			broadcastConvUpdate(conv, companyID)
 			return
 		}
-		// El agente fue eliminado del sistema — limpiar la asignación para buscar uno nuevo.
-		db.Model(conv).Update("agent_id", nil)
+
+		// Eliminado o desactivado: liberar la conversación a la cola común.
+		//
+		// Se filtra por id en vez de usar Model(conv): con la estructura ya poblada
+		// GORM no aplicaba el agent_id = NULL del mapa (el estado sí cambiaba pero el
+		// agente seguía asignado). Esta es la misma forma que ya usa DeleteUser.
+		db.Model(&models.Conversation{}).Where("id = ?", conv.ID).
+			Updates(map[string]any{"agent_id": gorm.Expr("NULL"), "status": "pending"})
 		conv.AgentID = nil
+		conv.Status = models.ConvPending
+		broadcastConvUpdate(conv, companyID)
+		return
 	}
 
-	// Candidatos: agentes o supervisores no eliminados, del departamento de la
-	// conversación si tiene uno (para respetar el enrutamiento por área).
+	// ── Regla 3: conversación nueva, nunca tuvo agente ───────────────────────
 	//
-	// Cada intento arranca de una consulta NUEVA. Antes se reutilizaba una sola
-	// instancia y se le encadenaba .Where("is_online = true") en el primer intento:
-	// GORM acumula las condiciones en el mismo Statement, así que el segundo intento
-	// seguía filtrando por is_online y tampoco encontraba a nadie. Efecto: si NINGÚN
-	// agente estaba conectado, la conversación quedaba en 'pending' sin asignar en
-	// vez de quedarle a un agente para que la viera al entrar al sistema.
-	candidatos := func() *gorm.DB {
-		s := db.Model(&models.User{}).
-			Where("role IN ('agent','supervisor') AND deleted_at IS NULL")
-		if conv.DepartmentID != nil {
-			s = s.Where("department_id = ?", *conv.DepartmentID)
-		}
-		return s
+	// Solo se autoasigna a alguien CONECTADO: repartirla a un agente desconectado
+	// que nunca la atendió la escondería en su bandeja sin que nadie la vea. Si no
+	// hay nadie conectado se deja en la cola común y la toma quien entre.
+	q := db.Model(&models.User{}).
+		Where("role IN ('agent','supervisor') AND deleted_at IS NULL AND is_active = true AND is_online = true")
+	if conv.DepartmentID != nil {
+		q = q.Where("department_id = ?", *conv.DepartmentID)
 	}
 
-	// 1er intento: preferir un agente que esté online en este momento.
 	var agent models.User
-	candidatos().Where("is_online = true").Order("last_seen_at DESC").First(&agent)
-
-	// 2do intento: si ninguno está online, tomar el agente visto más recientemente.
-	// La conversación le queda asignada y la encuentra al iniciar sesión.
-	if agent.ID == 0 {
-		candidatos().Order("last_seen_at DESC NULLS LAST").First(&agent)
-	}
+	q.Order("last_seen_at DESC").First(&agent)
 
 	if agent.ID != 0 {
-		// Agente encontrado — asignar y abrir la conversación.
 		db.Model(conv).Updates(map[string]any{
 			"agent_id": agent.ID,
 			"status":   "open",
 		})
+		conv.AgentID, conv.Status = &agent.ID, models.ConvOpen
 		// Notificar al agente recién asignado para que aparezca en su cola.
 		ws.GlobalHub.Broadcast(chUser(companyID, agent.ID), "ConversationAssigned", conv)
 	} else {
-		// Sin agentes disponibles — dejar en pending para que la auto-asignación
-		// la tome cuando un agente se conecte al sistema.
+		// Nadie conectado: queda en la cola común, sin asignar.
 		db.Model(conv).Update("status", "pending")
+		conv.Status = models.ConvPending
 	}
 	broadcastConvUpdate(conv, companyID)
 }
