@@ -1372,12 +1372,14 @@ export default function InboxPage() {
       // El backend responde 502 cuando el adjunto SÍ se guardó pero el proveedor lo
       // rechazó — insertarlo igual (status "failed") y mostrar la razón real en vez
       // de un genérico "verifica el formato" que puede no tener nada que ver.
-      const data = (err as { response?: { data?: { data?: Message; message?: string } } })?.response?.data
+      const data = (err as { response?: { data?: { data?: Message; message?: string; error_code?: string } } })?.response?.data
       if (data?.data) {
         qc.setQueryData<Message[]>(['messages', selectedId], prev => [...(prev ?? []), data.data as Message])
       }
       const reason = data?.message || 'No se pudo subir el archivo. Verifica el formato e intenta de nuevo.'
-      toast.error(reason)
+      // Formato no admitido por el proveedor: el aviso enumera los formatos válidos,
+      // así que necesita más tiempo en pantalla que un error corriente.
+      toast.error(reason, data?.error_code === 'unsupported_media_type' ? { duration: 12000 } : undefined)
       setUploadError(reason)
     },
   })

@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"harmony-api/internal/models"
@@ -196,9 +197,34 @@ func UploadAttachment(c *gin.Context) {
 
 	// Determinar el tipo MIME del archivo.
 	// Si el navegador/cliente no envió Content-Type, usar el genérico binario.
-	mimeType := header.Header.Get("Content-Type")
+	mimeType := senders.NormalizeMime(header.Header.Get("Content-Type"))
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
+	}
+
+	// WhatsApp solo admite una lista cerrada de formatos: Meta valida el MIME al
+	// subir el archivo y responde 400 si no está en ella (comprobado contra la API
+	// real; ni siquiera se puede eludir declarando application/octet-stream). Antes
+	// no se validaba nada: el archivo se guardaba, se intentaba enviar, Meta lo
+	// rechazaba y el mensaje quedaba en 'failed' sin ninguna explicación para el
+	// agente -- que es justo lo que pasó al enviar un .ico. Se corta acá, antes de
+	// guardar nada, y se dice qué formatos sí sirven.
+	if conv.Channel != nil && conv.Channel.Type == models.ChannelWhatsApp {
+		if _, ok := senders.WhatsAppSupportsMedia(mimeType); !ok {
+			ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(header.Filename)), ".")
+			detalle := "Este tipo de archivo"
+			if ext != "" {
+				detalle = "Los archivos ." + ext
+			}
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"message": detalle + " no se pueden enviar por WhatsApp: Meta no los admite. " +
+					"Formatos permitidos: " + senders.WhatsAppAllowedExtensions + ".",
+				"error_code":         "unsupported_media_type",
+				"mime_type":          mimeType,
+				"allowed_extensions": senders.WhatsAppAllowedExtensions,
+			})
+			return
+		}
 	}
 
 	// FIX: guardar bajo uploads/company_<id>/attachments — ServeUpload exige ese
@@ -279,7 +305,13 @@ func UploadAttachment(c *gin.Context) {
 		to := conv.Contact.Phone
 		switch conv.Channel.Type {
 		case models.ChannelWhatsApp:
-			sendResult, sendErr = senders.SendWhatsAppMedia(conv.Channel, to, msgType, savePath, mimeType, "", header.Filename)
+			// La categoría se toma del mapa de formatos admitidos, no de classifyMime:
+			// este último decidía por el prefijo del MIME, de modo que cualquier
+			// image/* que no fuera JPEG o PNG (ico, gif, bmp, svg, tiff) se enviaba
+			// como "image" y Meta lo rechazaba. Acá ya se sabe que el MIME está en la
+			// lista, porque se validó al recibir el archivo.
+			waKind, _ := senders.WhatsAppSupportsMedia(mimeType)
+			sendResult, sendErr = senders.SendWhatsAppMedia(conv.Channel, to, waKind, savePath, mimeType, "", header.Filename)
 		case models.ChannelMessenger:
 			attachType := msgType
 			if attachType == "document" {
