@@ -210,7 +210,8 @@ func UploadAttachment(c *gin.Context) {
 	// agente -- que es justo lo que pasó al enviar un .ico. Se corta acá, antes de
 	// guardar nada, y se dice qué formatos sí sirven.
 	if conv.Channel != nil && conv.Channel.Type == models.ChannelWhatsApp {
-		if _, ok := senders.WhatsAppSupportsMedia(mimeType); !ok {
+		kind, ok := senders.WhatsAppSupportsMedia(mimeType)
+		if !ok {
 			ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(header.Filename)), ".")
 			detalle := "Este tipo de archivo"
 			if ext != "" {
@@ -222,6 +223,18 @@ func UploadAttachment(c *gin.Context) {
 				"error_code":         "unsupported_media_type",
 				"mime_type":          mimeType,
 				"allowed_extensions": senders.WhatsAppAllowedExtensions,
+			})
+			return
+		}
+		// Tamaño: Meta también rechaza por peso, con un error poco descriptivo.
+		// Se corta antes indicando el límite concreto de esa categoría.
+		if limit, legible := senders.WhatsAppMediaSizeLimit(kind); header.Size > limit {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"message": fmt.Sprintf(
+					"El archivo pesa %.1f MB y WhatsApp permite hasta %s para este tipo de archivo.",
+					float64(header.Size)/(1<<20), legible),
+				"error_code": "media_too_large",
+				"max_size":   legible,
 			})
 			return
 		}

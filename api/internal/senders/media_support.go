@@ -21,10 +21,15 @@ import "strings"
 // whatsappMediaKind devuelve la categoría de mensaje de WhatsApp que corresponde a
 // cada MIME admitido. Un MIME ausente del mapa NO se puede enviar por WhatsApp.
 var whatsappMediaKind = map[string]string{
-	// Imágenes
+	// Imágenes. Un mensaje de tipo "image" en WhatsApp solo admite JPEG y PNG.
 	"image/jpeg": "image",
 	"image/png":  "image",
-	"image/webp": "sticker",
+	// WEBP se sube sin problema, pero WhatsApp solo lo acepta como STICKER y los
+	// stickers tienen requisitos estrictos (512x512, 100 KB estático / 500 KB
+	// animado). Un .webp corriente los incumple y el envío fallaría. Se manda como
+	// documento: llega como archivo descargable en vez de imagen incrustada, pero
+	// llega siempre, que es lo que importa.
+	"image/webp": "document",
 	// Audio
 	"audio/aac":  "audio",
 	"audio/mp4":  "audio",
@@ -51,6 +56,30 @@ var whatsappMediaKind = map[string]string{
 func WhatsAppSupportsMedia(mimeType string) (kind string, ok bool) {
 	k, ok := whatsappMediaKind[normalizeMime(mimeType)]
 	return k, ok
+}
+
+// Límites de tamaño de Meta por categoría. Superarlos hace fallar la subida con un
+// error de Meta poco claro, así que conviene cortar antes y decir el límite real.
+const (
+	maxImageBytes    int64 = 5 << 20   // 5 MB
+	maxAudioBytes    int64 = 16 << 20  // 16 MB
+	maxVideoBytes    int64 = 16 << 20  // 16 MB
+	maxDocumentBytes int64 = 100 << 20 // 100 MB
+)
+
+// WhatsAppMediaSizeLimit devuelve el tope en bytes y su descripción legible para la
+// categoría indicada.
+func WhatsAppMediaSizeLimit(kind string) (int64, string) {
+	switch kind {
+	case "image":
+		return maxImageBytes, "5 MB"
+	case "audio":
+		return maxAudioBytes, "16 MB"
+	case "video":
+		return maxVideoBytes, "16 MB"
+	default:
+		return maxDocumentBytes, "100 MB"
+	}
 }
 
 // WhatsAppAllowedExtensions es la lista legible de formatos admitidos, para poder
