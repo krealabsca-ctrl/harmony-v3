@@ -1507,7 +1507,11 @@ export default function InboxPage() {
   // AppLayout.tsx, para que funcione en cualquier pantalla y no solo acá.
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+    // dvh y NO vh: en los navegadores móviles 100vh es la altura SIN contar la barra
+    // de direcciones, así que el alto real disponible es menor y el área de escribir
+    // queda empujada fuera de la pantalla -- y con overflow-hidden, sin forma de
+    // alcanzarla. dvh se ajusta a lo que de verdad se ve.
+    <div className="flex h-[calc(100dvh-4rem)] overflow-hidden">
       {/* ── Left panel ─────────────────────────────────────────────────────── */}
       {/* #13: en móvil se muestra la lista O el chat (patrón lista→detalle), no ambos. */}
       <div className={`w-full md:w-80 lg:w-96 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-col ${selectedId ? 'hidden md:flex' : 'flex'}`}>
@@ -1608,13 +1612,17 @@ export default function InboxPage() {
                     </button>
                   )}
                   {conv.contact?.phone && (
-                    <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-0.5">
+                    <span className="hidden sm:flex text-xs text-gray-400 dark:text-gray-500 items-center gap-0.5">
                       <PhoneCall size={10} /> {conv.contact.phone}
                     </span>
                   )}
                 </div>
+                {/* Esta fila usa flex-wrap: en móvil todas estas etiquetas juntas se
+                  * repartían en varias líneas y estiraban la cabecera. Se dejan solo
+                  * las accionables (canal, estado y ventana de 24h); el número de caso
+                  * y el agente aparecen a partir de sm, donde ya hay ancho. */}
                 <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                  <span className="text-[10px] font-mono text-gray-400 dark:text-gray-500">{conv.case_number}</span>
+                  <span className="hidden sm:inline text-[10px] font-mono text-gray-400 dark:text-gray-500">{conv.case_number}</span>
                   {conv.channel && (
                     <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                       <span className="inline-flex items-center justify-center w-3 h-3 rounded-full"
@@ -1634,7 +1642,7 @@ export default function InboxPage() {
                     {conv.status === 'closed' ? 'Cerrado' : 'Abierto'}
                   </span>
                   {conv.agent && (
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400">👤 {conv.agent.name}</span>
+                    <span className="hidden sm:inline text-[10px] text-gray-500 dark:text-gray-400">👤 {conv.agent.name}</span>
                   )}
                   {/* Muestra el badge de ventana de WhatsApp solo si el canal lo tiene */}
                   {winSecs !== null && <WindowBadge conv={conv} />}
@@ -1642,20 +1650,29 @@ export default function InboxPage() {
               </div>
             </div>
 
+            {/* Barra de acciones.
+              *
+              * En móvil los botones van SOLO con ícono. Con las etiquetas siempre
+              * visibles este bloque medía 432px en una pantalla de 412px: al tener
+              * flex-shrink-0 no cedían, aplastaban a 0px el bloque del contacto y
+              * hacían crecer la cabecera hasta 215px de alto. Las etiquetas vuelven
+              * a partir de lg, que es cuando el panel del chat tiene espacio de
+              * sobra. El title= mantiene la pista de qué hace cada botón. */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {/* Botón casos anteriores: visible si el contacto tiene ID */}
               {conv.contact && (
                 <button onClick={() => setShowPrevChats(true)}
                   title="Ver casos anteriores de este contacto"
                   className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                  <History size={12} /> Casos anteriores
+                  <History size={12} /> <span className="hidden lg:inline">Casos anteriores</span>
                 </button>
               )}
               {/* Botón "Asignarme" visible si la conversación está pendiente o sin agente asignado */}
               {(conv.status === 'pending' || !conv.agent) && (
                 <button onClick={() => claimMutation.mutate()} disabled={claimMutation.isPending}
+                  title="Asignarme esta conversación"
                   className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors">
-                  <UserPlus size={12} /> Asignarme
+                  <UserPlus size={12} /> <span className="hidden lg:inline">Asignarme</span>
                 </button>
               )}
               <div className="relative">
@@ -1670,8 +1687,9 @@ export default function InboxPage() {
               {/* Botón de reasignación individual: solo admin/supervisor */}
               {canManage && (
                 <button onClick={() => setShowTransfer(true)}
+                  title="Reasignar la conversación a otro agente"
                   className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">
-                  <RotateCcw size={12} /> Reasignar
+                  <RotateCcw size={12} /> <span className="hidden lg:inline">Reasignar</span>
                 </button>
               )}
               {/* Botón Cerrar/Reabrir dependiendo del estado actual de la conversación */}

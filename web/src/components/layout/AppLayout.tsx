@@ -50,7 +50,13 @@ export default function AppLayout() {
   }, [unreadData?.unread])
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
+    // h-dvh y NO h-screen: en móviles 100vh ignora la barra de direcciones del
+    // navegador, así que el contenido de abajo queda fuera de la pantalla. dvh se
+    // ajusta al alto realmente visible.
+    // No se dejan las dos clases juntas como "respaldo": en Tailwind gana la que
+    // aparece más abajo en el CSS generado, no la última del atributo, y h-screen
+    // se genera después -- habría anulado el arreglo.
+    <div className="flex h-dvh bg-gray-50 dark:bg-gray-900 overflow-hidden">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <TopBar onMenuClick={() => setSidebarOpen(true)} />
