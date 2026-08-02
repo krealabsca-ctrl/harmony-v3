@@ -1599,7 +1599,7 @@ export default function InboxPage() {
                 {initials(conv.contact?.name ?? 'NN')}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 flex-nowrap sm:flex-wrap min-w-0">
+                <div className="flex items-center gap-1.5 flex-nowrap lg:flex-wrap min-w-0">
                   <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
                     {conv.contact?.name ?? 'Sin nombre'}
                   </p>
@@ -1612,7 +1612,7 @@ export default function InboxPage() {
                     </button>
                   )}
                   {conv.contact?.phone && (
-                    <span className="hidden sm:flex text-xs text-gray-400 dark:text-gray-500 items-center gap-0.5">
+                    <span className="hidden lg:flex text-xs text-gray-400 dark:text-gray-500 items-center gap-0.5">
                       <PhoneCall size={10} /> {conv.contact.phone}
                     </span>
                   )}
@@ -1623,8 +1623,8 @@ export default function InboxPage() {
                   * recorta y la cabecera se mantiene compacta. Desde sm vuelve a
                   * envolverse, que es cuando hay ancho para que se vea bien.
                   * El número de caso y el agente solo aparecen desde sm. */}
-                <div className="flex items-center gap-1.5 mt-0.5 flex-nowrap sm:flex-wrap overflow-hidden">
-                  <span className="hidden sm:inline text-[10px] font-mono text-gray-400 dark:text-gray-500">{conv.case_number}</span>
+                <div className="flex items-center gap-1.5 mt-0.5 flex-nowrap lg:flex-wrap overflow-hidden">
+                  <span className="hidden lg:inline text-[10px] font-mono text-gray-400 dark:text-gray-500">{conv.case_number}</span>
                   {conv.channel && (
                     <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex-shrink-0">
                       <span className="inline-flex items-center justify-center w-3 h-3 rounded-full"
@@ -1632,7 +1632,7 @@ export default function InboxPage() {
                         <ChannelIcon type={conv.channel.type} size={8} color="white" />
                       </span>
                       {/* En móvil basta el color del canal; el nombre ocupa demasiado */}
-                      <span className="hidden sm:inline">{conv.channel.name}</span>
+                      <span className="hidden lg:inline">{conv.channel.name}</span>
                     </span>
                   )}
                   {/* Solo dos estados visibles: Abierto (activa) y Cerrado.
@@ -1645,7 +1645,7 @@ export default function InboxPage() {
                     {conv.status === 'closed' ? 'Cerrado' : 'Abierto'}
                   </span>
                   {conv.agent && (
-                    <span className="hidden sm:inline text-[10px] text-gray-500 dark:text-gray-400">👤 {conv.agent.name}</span>
+                    <span className="hidden lg:inline text-[10px] text-gray-500 dark:text-gray-400">👤 {conv.agent.name}</span>
                   )}
                   {/* Muestra el badge de ventana de WhatsApp solo si el canal lo tiene */}
                   {winSecs !== null && <WindowBadge conv={conv} />}
