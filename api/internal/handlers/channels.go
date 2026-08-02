@@ -163,6 +163,10 @@ func CreateChannel(c *gin.Context) {
 	// Construir el modelo con los valores recibidos.
 	// El canal se marca activo inmediatamente para que empiece a recibir mensajes.
 	ch := models.Channel{
+		// Sin esto la columna quedaba en 0 y el broadcast de los mensajes entrantes
+		// salía a "company.0.*" mientras los navegadores escuchan "company.{id}.*":
+		// ningún mensaje del cliente llegaba en vivo.
+		CompanyID:     c.GetUint("company_id"),
 		Name:          req.Name,
 		Type:          models.ChannelType(req.Type),
 		Description:   req.Description,

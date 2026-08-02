@@ -151,14 +151,11 @@ func (h *Hub) Run() {
 		case msg := <-h.broadcast:
 			data, _ := json.Marshal(msg)
 			h.mu.RLock()
-			var coincidencias, totalClientes int // DIAG-TEMP
 			for c := range h.clients {
-				totalClientes++ // DIAG-TEMP
 				c.mu.Lock()
 				subscribed := c.channels[msg.Channel]
 				c.mu.Unlock()
 				if subscribed {
-					coincidencias++ // DIAG-TEMP
 					select {
 					case c.send <- data:
 					default:
@@ -171,8 +168,6 @@ func (h *Hub) Run() {
 				}
 			}
 			h.mu.RUnlock()
-			log.Printf("DIAG-WS broadcast canal=%q evento=%q clientes=%d coincidencias=%d",
-				msg.Channel, msg.Event, totalClientes, coincidencias) // DIAG-TEMP
 		}
 	}
 }
@@ -299,11 +294,8 @@ func (c *client) readPump() {
 
 		// C-01: validar que el canal sea del scope del usuario (cross-tenant prevention)
 		if !c.isChannelAllowed(msg.Channel) {
-			log.Printf("DIAG-WS RECHAZADO accion=%q canal=%q (empresa del cliente=%d usuario=%d)",
-				msg.Action, msg.Channel, c.companyID, c.userID) // DIAG-TEMP
 			continue
 		}
-		log.Printf("DIAG-WS ok accion=%q canal=%q usuario=%d", msg.Action, msg.Channel, c.userID) // DIAG-TEMP
 
 		c.mu.Lock()
 		if msg.Action == "subscribe" {

@@ -230,7 +230,7 @@ func processInboundMessage(db *gorm.DB, channelID uint, senderPhone, senderName,
 
 	// 6. Broadcast WebSocket — notificar bandeja de entrada y sala de conversación.
 	// C-01: los canales van namespaceados por empresa para no filtrar datos entre tenants.
-	companyID := channel.CompanyID
+	companyID := resolveChannelCompanyID(db, &channel)
 	ws.GlobalHub.Broadcast(chInbox(companyID), "MessageReceived", map[string]any{
 		"conversation_id": conv.ID,
 		"message":         msg,
@@ -544,6 +544,40 @@ func buildBotMessages(db *gorm.DB, convID uint, maxChars int) []anthropicMsg {
 		msgs = msgs[1:]
 	}
 	return msgs
+}
+
+// resolveChannelCompanyID devuelve la empresa dueña del canal, corrigiendo la fila
+// si hiciera falta.
+//
+// Los eventos de WebSocket se publican en canales namespaceados por empresa
+// ("company.34.inbox"). El navegador se suscribe usando el company_id de su sesión,
+// pero el servidor lo tomaba de channels.company_id -- una columna que CreateChannel
+// nunca rellenaba, así que valía 0. Resultado: el servidor emitía a "company.0.*"
+// mientras los navegadores escuchaban "company.34.*" y NINGÚN mensaje entrante
+// llegaba en vivo. Se detectó con trazas en producción:
+//
+//	subscribe canal="company.34.conversation.7"
+//	broadcast canal="company.0.conversation.7"  clientes=2 coincidencias=0
+//
+// La fuente confiable es channel_lookup (base del sistema), que asocia el public_id
+// del canal con su empresa. Al resolverlo se corrige también la fila para que el
+// siguiente mensaje no tenga que consultarlo de nuevo.
+func resolveChannelCompanyID(db *gorm.DB, channel *models.Channel) uint {
+	if channel.CompanyID != 0 {
+		return channel.CompanyID
+	}
+	var resuelta uint
+	database.SystemDB.Table("channel_lookup").
+		Where("public_id = ?", channel.PublicID).
+		Select("company_id").Scan(&resuelta)
+	if resuelta == 0 {
+		log.Printf("ERROR: el canal %d no tiene empresa asociada; los eventos en vivo no llegarán", channel.ID)
+		return 0
+	}
+	db.Model(&models.Channel{}).Where("id = ?", channel.ID).Update("company_id", resuelta)
+	channel.CompanyID = resuelta
+	log.Printf("canal %d tenía company_id=0; corregido a %d", channel.ID, resuelta)
+	return resuelta
 }
 
 // assignToAgent decide a quién le queda la conversación cuando llega un mensaje.
