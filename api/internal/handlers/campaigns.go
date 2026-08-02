@@ -570,14 +570,48 @@ func upsertPricingRow(db *gorm.DB, companyID uint, code, name, category string, 
 	}).Error
 }
 
-// lookupWhatsAppPrice busca el precio vigente por (país, categoría). Devuelve 0 si no
-// hay tarifa configurada. Se usa al CREAR una campaña para congelar el costo histórico.
+// lookupWhatsAppPrice busca el precio vigente por (país, categoría). Se usa al CREAR
+// una campaña para congelar el costo histórico.
+//
+// Meta no cotiza todos los países por separado: los que no tienen tarifa propia caen
+// en una agrupación regional (Costa Rica → "Rest of Latin America"). Por eso se
+// intenta en tres pasos, del dato más específico al más general:
+//
+//	1. el código exacto del país ("MX", o una agrupación si ya vino como tal)
+//	2. la agrupación regional que le corresponde ("CR" → "ROLAM")
+//	3. "OTHER", la tarifa comodín de Meta
+//
+// Antes solo existía el paso 1, así que cualquier país sin tarifa propia devolvía 0
+// y la campaña quedaba registrada con costo cero. Se devuelve además el código con
+// el que se encontró la tarifa, para poder guardarlo y que quede trazable con qué
+// mercado se cotizó.
 func lookupWhatsAppPrice(db *gorm.DB, companyID uint, countryCode, category string) float64 {
-	var price float64
-	db.Raw(`SELECT price_usd FROM whatsapp_pricing
-		WHERE company_id = ? AND country_code = ? AND LOWER(category) = LOWER(?)
-		LIMIT 1`, companyID, countryCode, category).Scan(&price)
+	price, _ := lookupWhatsAppPriceResolved(db, companyID, countryCode, category)
 	return price
+}
+
+func lookupWhatsAppPriceResolved(db *gorm.DB, companyID uint, countryCode, category string) (float64, string) {
+	candidates := []string{strings.ToUpper(strings.TrimSpace(countryCode))}
+	if region := resolveMetaRegion(countryCode); region != "" {
+		candidates = append(candidates, region)
+	}
+	candidates = append(candidates, "OTHER")
+
+	for _, code := range candidates {
+		if code == "" {
+			continue
+		}
+		var rows []float64
+		db.Raw(`SELECT price_usd FROM whatsapp_pricing
+			WHERE company_id = ? AND country_code = ? AND LOWER(category) = LOWER(?)
+			LIMIT 1`, companyID, code, category).Scan(&rows)
+		// Una tarifa de 0 configurada a propósito (p. ej. "service" es gratis) es un
+		// resultado válido: lo que hay que descartar es la ausencia de fila.
+		if len(rows) > 0 {
+			return rows[0], code
+		}
+	}
+	return 0, ""
 }
 
 // ListPricing devuelve todas las tarifas de WhatsApp almacenadas en la base de datos,

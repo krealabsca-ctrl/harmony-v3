@@ -228,7 +228,10 @@ const EMPTY_WIZARD: WizardState = {
   name: '',
   channel_id: null,
   template_id: null,
-  country_code: 'CR',      // Costa Rica como país por defecto
+  // Mercado tarifario de Meta, no país: Meta no cotiza Costa Rica por separado, la
+  // incluye en "Rest of Latin America" (ROLAM). El valor anterior era 'CR', que no
+  // existe en la tabla de tarifas, así que el estimado salía en $0.
+  country_code: 'ROLAM',
   input_mode: 'manual',
   manual_phones: '',
   csv_file: null,
@@ -421,7 +424,11 @@ export default function CampaignsPage() {
   // Si no hay plantilla o no cargaron los precios aún, el costo es 0.
   const costPerMessage = (() => {
     if (!selectedTemplate || !wizard.country_code) return 0
-    const row = pricingMap[wizard.country_code] ?? pricingMap['US']
+    // Respaldo "OTHER": es la tarifa comodín de Meta y la misma que usa el servidor
+    // como último recurso. Antes se caía a 'US', que ni siquiera existe en la tabla
+    // (Meta agrupa Estados Unidos dentro de "North America"), así que el respaldo
+    // nunca encontraba nada y el estimado quedaba en $0.
+    const row = pricingMap[wizard.country_code] ?? pricingMap['OTHER']
     if (!row) return 0
     const cat = (['marketing', 'utility', 'authentication', 'service'].includes(selectedTemplate.category ?? '')
       ? selectedTemplate.category
