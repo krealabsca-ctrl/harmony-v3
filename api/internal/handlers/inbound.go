@@ -578,22 +578,32 @@ func assignToAgent(db *gorm.DB, conv *models.Conversation, companyID uint) {
 		conv.AgentID = nil
 	}
 
-	// Construir la consulta base: agentes o supervisores no eliminados.
-	q := db.Model(&models.User{}).
-		Where("role IN ('agent','supervisor') AND deleted_at IS NULL")
-	// Restringir al departamento si la conversación tiene uno asignado,
-	// para respetar el enrutamiento por especialidad o área.
-	if conv.DepartmentID != nil {
-		q = q.Where("department_id = ?", *conv.DepartmentID)
+	// Candidatos: agentes o supervisores no eliminados, del departamento de la
+	// conversación si tiene uno (para respetar el enrutamiento por área).
+	//
+	// Cada intento arranca de una consulta NUEVA. Antes se reutilizaba una sola
+	// instancia y se le encadenaba .Where("is_online = true") en el primer intento:
+	// GORM acumula las condiciones en el mismo Statement, así que el segundo intento
+	// seguía filtrando por is_online y tampoco encontraba a nadie. Efecto: si NINGÚN
+	// agente estaba conectado, la conversación quedaba en 'pending' sin asignar en
+	// vez de quedarle a un agente para que la viera al entrar al sistema.
+	candidatos := func() *gorm.DB {
+		s := db.Model(&models.User{}).
+			Where("role IN ('agent','supervisor') AND deleted_at IS NULL")
+		if conv.DepartmentID != nil {
+			s = s.Where("department_id = ?", *conv.DepartmentID)
+		}
+		return s
 	}
 
 	// 1er intento: preferir un agente que esté online en este momento.
 	var agent models.User
-	q.Where("is_online = true").Order("last_seen_at DESC").First(&agent)
+	candidatos().Where("is_online = true").Order("last_seen_at DESC").First(&agent)
 
-	// 2do intento: si ninguno está online, tomar el último agente activo del departamento.
+	// 2do intento: si ninguno está online, tomar el agente visto más recientemente.
+	// La conversación le queda asignada y la encuentra al iniciar sesión.
 	if agent.ID == 0 {
-		q.Order("last_seen_at DESC").First(&agent)
+		candidatos().Order("last_seen_at DESC NULLS LAST").First(&agent)
 	}
 
 	if agent.ID != 0 {
