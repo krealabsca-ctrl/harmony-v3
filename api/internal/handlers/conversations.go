@@ -457,7 +457,10 @@ func SendMessage(c *gin.Context) {
 			if req.TemplateID != nil {
 				var tpl Template
 				if db.First(&tpl, *req.TemplateID).Error == nil {
-					tplPayload = &senders.TemplatePayload{Name: tpl.ExternalTemplateID, Language: tpl.Language}
+					// Meta espera el NOMBRE de la plantilla, no su id. Antes se
+					// mandaba external_template_id (el id numérico que devuelve Meta
+					// al crearla) y el envío fallaba siempre.
+					tplPayload = &senders.TemplatePayload{Name: tpl.Name, Language: tpl.Language}
 				}
 			}
 			sendResult, err := senders.SendWhatsApp(conv.Channel, to, req.Body, tplPayload)

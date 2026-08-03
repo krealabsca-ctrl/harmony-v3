@@ -40,6 +40,10 @@ func main() {
 
 	// Iniciar el job de retención de historial
 	go jobs.Run()
+	// Enviador de campañas: recorre las campañas en ejecución y les manda la
+	// plantilla a sus destinatarios pendientes. Sin esto, iniciar una campaña solo
+	// cambiaba su estado a "running" y no se enviaba nada.
+	go jobs.RunCampaigns()
 	log.Println("✓ Job de retención de historial iniciado")
 
 	// Configurar rutas Gin

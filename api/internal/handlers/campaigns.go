@@ -460,10 +460,18 @@ func LaunchCampaign(c *gin.Context) {
 		return
 	}
 
-	db.Model(&campaign).Update("status", "running")
+	// started_at no se registraba: la campaña quedaba "en ejecución" sin fecha de
+	// inicio. El envío real lo hace el worker de jobs, que toma las campañas en este
+	// estado y les manda la plantilla a sus destinatarios pendientes.
+	ahora := time.Now()
+	db.Model(&campaign).Updates(map[string]any{"status": "running", "started_at": ahora})
+	campaign.Status, campaign.StartedAt = "running", &ahora
 	enrichCampaign(db, &campaign)
 
-	c.JSON(http.StatusOK, gin.H{"data": campaign, "message": "Campaña iniciada correctamente"})
+	c.JSON(http.StatusOK, gin.H{
+		"data":    campaign,
+		"message": "Campaña iniciada. El envío comenzará en unos segundos.",
+	})
 }
 
 // CancelCampaign cancela una campaña que esté en cualquier estado activo,
