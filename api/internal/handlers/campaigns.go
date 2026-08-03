@@ -935,3 +935,68 @@ func ImportPricingCSV(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"imported": imported, "skipped": skipped})
 }
+
+// SyncCampaignRecipientStatus refleja en la campaña lo que Meta reportó sobre un
+// mensaje ya enviado.
+//
+// El envío de campaña solo sabe si Meta ACEPTÓ el mensaje; que llegue al teléfono se
+// confirma después, por webhook. Antes esa confirmación solo tocaba la tabla de
+// mensajes, así que una campaña podía mostrar "3 enviados, 0 fallidos" cuando Meta
+// había rechazado la entrega de uno — que es justo lo que se reportó: un mensaje que
+// no llegó pero figuraba como enviado.
+//
+// Los contadores se recalculan desde los destinatarios en vez de sumar/restar: es
+// idempotente, y Meta reenvía el mismo aviso más de una vez.
+func SyncCampaignRecipientStatus(db *gorm.DB, externalID, status, motivo string) {
+	if externalID == "" {
+		return
+	}
+	var msg models.Message
+	if db.Where("external_id = ? AND direction = 'outbound'", externalID).First(&msg).Error != nil {
+		return
+	}
+
+	var rec struct {
+		ID         uint
+		CampaignID uint
+		Status     string
+	}
+	if db.Table("campaign_recipients").Where("message_id = ?", msg.ID).Take(&rec).Error != nil {
+		return // el mensaje no pertenece a ninguna campaña
+	}
+
+	// No retroceder: un aviso de "sent" que llega tarde no debe pisar un "read".
+	orden := map[string]int{"pending": 0, "sent": 1, "delivered": 2, "read": 3}
+	if status != "failed" && orden[status] <= orden[rec.Status] {
+		return
+	}
+
+	ahora := time.Now()
+	upd := map[string]any{"status": status, "updated_at": ahora}
+	switch status {
+	case "delivered":
+		upd["delivered_at"] = ahora
+	case "read":
+		upd["read_at"] = ahora
+	case "failed":
+		if motivo == "" {
+			motivo = "Meta no pudo entregar el mensaje"
+		}
+		upd["error_message"] = motivo
+	}
+	db.Table("campaign_recipients").Where("id = ?", rec.ID).Updates(upd)
+
+	recalcularContadoresCampana(db, rec.CampaignID)
+}
+
+// recalcularContadoresCampana reconstruye los totales de la campaña a partir del
+// estado real de sus destinatarios.
+func recalcularContadoresCampana(db *gorm.DB, campaignID uint) {
+	db.Exec(`UPDATE campaigns SET
+			sent_count      = (SELECT COUNT(*) FROM campaign_recipients WHERE campaign_id = ? AND status IN ('sent','delivered','read')),
+			delivered_count = (SELECT COUNT(*) FROM campaign_recipients WHERE campaign_id = ? AND status IN ('delivered','read')),
+			read_count      = (SELECT COUNT(*) FROM campaign_recipients WHERE campaign_id = ? AND status = 'read'),
+			failed_count    = (SELECT COUNT(*) FROM campaign_recipients WHERE campaign_id = ? AND status = 'failed'),
+			updated_at      = NOW()
+		WHERE id = ?`, campaignID, campaignID, campaignID, campaignID, campaignID)
+}

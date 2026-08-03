@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -271,6 +272,16 @@ func WhatsAppHandle(c *gin.Context) {
 					Statuses []struct {
 						ID     string `json:"id"`
 						Status string `json:"status"`
+						// Meta explica AQUÍ por qué un mensaje no se pudo entregar
+						// (número sin WhatsApp, fuera de ventana, plantilla pausada…).
+						// Antes se descartaba: el mensaje quedaba en "failed" sin
+						// ninguna pista de la causa.
+						Errors []struct {
+							Code    int    `json:"code"`
+							Title   string `json:"title"`
+							Message string `json:"message"`
+							Details string `json:"error_data.details"`
+						} `json:"errors"`
 					} `json:"statuses"`
 					// Campos del aviso message_template_status_update: Meta lo emite
 					// cuando una plantilla cambia de estado (aprobada, rechazada,
@@ -378,7 +389,24 @@ func WhatsAppHandle(c *gin.Context) {
 				if st.Status != "sent" && st.Status != "delivered" && st.Status != "read" && st.Status != "failed" {
 					continue // valores desconocidos (ej. futuros) se ignoran
 				}
+				// Armar el motivo legible que Meta adjunta cuando falla la entrega.
+				var motivo string
+				if len(st.Errors) > 0 {
+					e := st.Errors[0]
+					motivo = e.Title
+					if e.Details != "" {
+						motivo = e.Details
+					} else if e.Message != "" {
+						motivo = e.Message
+					}
+					if e.Code != 0 {
+						motivo = fmt.Sprintf("[%d] %s", e.Code, motivo)
+					}
+				}
 				UpdateMessageStatus(res.DB, res.CompanyID, st.ID, st.Status)
+				// Reflejar el resultado real en la campaña: sin esto un envío que
+				// Meta rechazó seguía contando como "enviado" en las estadísticas.
+				SyncCampaignRecipientStatus(res.DB, st.ID, st.Status, motivo)
 			}
 		}
 	}
