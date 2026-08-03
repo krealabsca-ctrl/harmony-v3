@@ -260,10 +260,16 @@ input[type="color"]::-webkit-color-swatch {
 .dark .ring-1                           { --tw-ring-color: #374151; }
 .dark .ring-gray-200                    { --tw-ring-color: #374151; }
 
-/* Prose / rich text */
-.dark p                                 { color: #e5e7eb; }
-.dark h1, .dark h2, .dark h3,
-.dark h4, .dark h5, .dark h6           { color: #f9fafb; }
+/* Prose / rich text
+ *
+ * El :not([class*="text-"]) es imprescindible. Estas reglas viven fuera de las capas
+ * de Tailwind, y en CSS lo que está fuera de una capa gana SIEMPRE sobre lo que está
+ * dentro, sin importar la especificidad. Sin la exclusión, "\.dark p" pintaba de gris
+ * TODO párrafo en modo oscuro y anulaba cualquier color explícito: por eso el aviso
+ * del diálogo de iniciar campaña salía en gris claro sobre fondo claro, ilegible,
+ * aunque su clase pedía ámbar. Ahora solo aplica a los párrafos sin color propio. */
+.dark p:not([class*="text-"])           { color: #e5e7eb; }
+.dark :is(h1, h2, h3, h4, h5, h6):not([class*="text-"]) { color: #f9fafb; }
 .dark a:not(.btn-primary):not(.btn-secondary):not(.nav-link) { color: #a78bfa; }
 
 /* ─── Scrollbar ─────────────────────────────────────────────────────────────── */
