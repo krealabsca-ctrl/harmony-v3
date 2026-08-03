@@ -860,7 +860,7 @@ export default function ChannelsPage() {
                     <div className="flex items-center gap-2">
                       <div className="relative flex-1">
                         <code
-                          className={`block text-xs bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 font-mono text-amber-800 break-all transition-all ${
+                          className={`block text-xs bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/50 rounded-xl px-4 py-2.5 font-mono text-amber-800 dark:text-amber-200 break-all transition-all ${
                             showVerifyToken ? '' : 'blur-sm select-none'
                           }`}
                         >
@@ -891,7 +891,7 @@ export default function ChannelsPage() {
                         {copiedVerifyToken ? '✓ Copiado' : 'Copiar'}
                       </button>
                     </div>
-                    <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <p className="mt-2 text-xs text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/50 rounded-lg px-3 py-2">
                       ⚠️ Este token es único por canal. No lo compartas. Meta lo usa solo una vez para verificar que el webhook es tuyo.
                     </p>
                   </div>
@@ -1241,11 +1241,11 @@ export default function ChannelsPage() {
                             isConfigured={editingChannel?.credential_flags?.app_secret}
                             type={form.type}
                           />
-                          <div className="flex items-start gap-2 mt-1 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                          <div className="flex items-start gap-2 mt-1 px-3 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/50">
                             <svg className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
-                            <p className="text-xs text-amber-700">
+                            <p className="text-xs text-amber-700 dark:text-amber-200">
                               Meta firma con esta clave cada mensaje entrante. <strong>Sin ella los mensajes se
                               descartan en silencio</strong>, aunque Meta muestre el webhook como conectado.
                               No la confunda con el <strong>Token de verificación</strong>, que Harmony genera solo

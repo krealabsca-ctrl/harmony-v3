@@ -804,8 +804,11 @@ export default function CampaignsPage() {
               </div>
             </dl>
 
-            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-5">
-              <p className="text-xs text-amber-700 font-medium">
+            {/* Este aviso no tenía variantes para modo oscuro: quedaba con fondo
+                crema y texto claro encima, ilegible justo en el paso que advierte
+                que la acción no se puede deshacer. */}
+            <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/50 rounded-xl px-4 py-3 mb-5">
+              <p className="text-xs text-amber-700 dark:text-amber-200 font-medium">
                 Una vez iniciada, la campaña comenzará a enviar mensajes de inmediato y no podrás
                 revertir los envíos realizados.
               </p>
@@ -1333,9 +1336,9 @@ export default function CampaignsPage() {
               </button>
             </div>
             <div className="px-6 py-5 space-y-4">
-              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/50 rounded-xl px-4 py-3">
                 <AlertTriangle size={18} className="text-amber-500 mt-0.5 shrink-0" />
-                <p className="text-sm text-amber-700">
+                <p className="text-sm text-amber-700 dark:text-amber-200">
                   Esta acción cancelará el envío. Los mensajes ya enviados no pueden revertirse.
                 </p>
               </div>

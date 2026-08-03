@@ -88,7 +88,7 @@ export default function ResetPasswordPage() {
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Ingresa tu nueva contraseña.</p>
 
               {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+                <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800/60 rounded-xl text-sm text-red-700 dark:text-red-200">
                   {error}
                 </div>
               )}
