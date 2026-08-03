@@ -180,14 +180,18 @@ func CreateWhatsAppTemplate(ch *models.Channel, spec TemplateSpec) (TemplateResu
 // nombre. Sirve como respaldo del webhook message_template_status_update: si ese
 // aviso se pierde (app no suscrita al campo, caída del webhook), esto permite
 // reconciliar el estado bajo demanda.
-func FetchWhatsAppTemplateStatus(ch *models.Channel, templateName string) (status, reason string, err error) {
+// Devuelve también la categoría porque Meta la reclasifica por su cuenta según el
+// contenido (una plantilla creada como Utilidad puede terminar en Marketing). Esa
+// categoría define el precio y si el mensaje entra en los experimentos de Meta, así
+// que conviene reflejar la vigente y no la que se pidió al crearla.
+func FetchWhatsAppTemplateStatus(ch *models.Channel, templateName string) (status, reason, category string, err error) {
 	wabaID, token, err := wabaCreds(ch)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	name := normalizeTemplateName(templateName)
 	if name == "" {
-		return "", "", fmt.Errorf("nombre de plantilla vacío")
+		return "", "", "", fmt.Errorf("nombre de plantilla vacío")
 	}
 
 	cbErr := whatsappBreaker.Call(func() error {
@@ -217,6 +221,7 @@ func FetchWhatsAppTemplateStatus(ch *models.Channel, templateName string) (statu
 			Data []struct {
 				Name           string `json:"name"`
 				Status         string `json:"status"`
+				Category       string `json:"category"`
 				RejectedReason string `json:"rejected_reason"`
 			} `json:"data"`
 		}
@@ -227,6 +232,7 @@ func FetchWhatsAppTemplateStatus(ch *models.Channel, templateName string) (statu
 		for _, t := range result.Data {
 			if strings.EqualFold(t.Name, name) {
 				status = metaTemplateStatus(t.Status)
+				category = t.Category
 				if !strings.EqualFold(t.RejectedReason, "NONE") {
 					reason = t.RejectedReason
 				}
@@ -236,9 +242,9 @@ func FetchWhatsAppTemplateStatus(ch *models.Channel, templateName string) (statu
 		return fmt.Errorf("la plantilla \"%s\" no existe en Meta", name)
 	})
 	if cbErr != nil {
-		return "", "", cbErr
+		return "", "", "", cbErr
 	}
-	return status, reason, nil
+	return status, reason, category, nil
 }
 
 // DeleteWhatsAppTemplate elimina la plantilla de la cuenta de WhatsApp Business.

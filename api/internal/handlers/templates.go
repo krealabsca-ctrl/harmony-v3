@@ -407,13 +407,24 @@ func SyncTemplateStatus(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	status, reason, err := senders.FetchWhatsAppTemplateStatus(ch, tpl.Name)
+	status, reason, categoria, err := senders.FetchWhatsAppTemplateStatus(ch, tpl.Name)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"message": err.Error()})
 		return
 	}
-	db.Model(&tpl).Updates(map[string]any{"status": status, "rejection_reason": reason})
+	updates := map[string]any{"status": status, "rejection_reason": reason}
+	// Meta reclasifica las plantillas por su cuenta según el contenido, y esa
+	// categoría define el precio del envío y si el mensaje entra en sus
+	// experimentos de marketing. Antes se consultaba pero se descartaba, así que
+	// Harmony podía seguir mostrando la categoría con la que se creó.
+	if categoria != "" {
+		updates["category"] = categoria
+	}
+	db.Model(&tpl).Updates(updates)
 	tpl.Status, tpl.RejectionReason = status, reason
+	if categoria != "" {
+		tpl.Category = categoria
+	}
 	broadcastTemplateUpdate(c.GetUint("company_id"), &tpl)
 	c.JSON(http.StatusOK, gin.H{"data": tpl})
 }
@@ -474,6 +485,29 @@ func applyTemplateStatusUpdate(db *gorm.DB, companyID uint, templateName, event,
 	broadcastTemplateUpdate(companyID, &tpl)
 }
 
+// applyTemplateCategoryUpdate refleja la reclasificación que hace Meta por su cuenta.
+//
+// Meta decide la categoría final según el contenido de la plantilla, sin importar la
+// que se haya pedido al crearla, y puede cambiarla después. No es un detalle menor:
+// la categoría determina cuánto cuesta cada envío y si el mensaje queda sujeto a los
+// experimentos de marketing de Meta, que retienen deliberadamente parte de esos
+// envíos (error 130472).
+func applyTemplateCategoryUpdate(db *gorm.DB, companyID uint, templateName, nuevaCategoria string) {
+	if templateName == "" || nuevaCategoria == "" {
+		return
+	}
+	var tpl Template
+	if err := db.Where("LOWER(name) = LOWER(?)", templateName).First(&tpl).Error; err != nil {
+		log.Printf("webhook de categoría: no se encontró la plantilla \"%s\" en la empresa %d", templateName, companyID)
+		return
+	}
+	anterior := tpl.Category
+	db.Model(&tpl).Update("category", nuevaCategoria)
+	tpl.Category = nuevaCategoria
+	log.Printf("Meta reclasificó la plantilla \"%s\" de %s a %s", templateName, anterior, nuevaCategoria)
+	broadcastTemplateUpdate(companyID, &tpl)
+}
+
 // broadcastTemplateUpdate empuja el nuevo estado de la plantilla por WebSocket para
 // que la pantalla de Plantillas lo refleje sin recargar ni esperar un refetch.
 func broadcastTemplateUpdate(companyID uint, tpl *Template) {
@@ -482,6 +516,7 @@ func broadcastTemplateUpdate(companyID uint, tpl *Template) {
 		"status":           tpl.Status,
 		"meta_status":      tpl.Status,
 		"rejection_reason": tpl.RejectionReason,
+		"category":         tpl.Category,
 		"name":             tpl.Name,
 	})
 }

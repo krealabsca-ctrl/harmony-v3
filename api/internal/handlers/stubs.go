@@ -291,6 +291,12 @@ func WhatsAppHandle(c *gin.Context) {
 					MessageTemplateID   int64  `json:"message_template_id"`
 					MessageTemplateName string `json:"message_template_name"`
 					Reason              string `json:"reason"`
+					// Campos del aviso template_category_update: Meta reclasifica las
+					// plantillas por su cuenta según el contenido, y la categoría
+					// define el precio del envío y si el mensaje entra en sus
+					// experimentos de marketing.
+					PreviousCategory string `json:"previous_category"`
+					NewCategory      string `json:"new_category"`
 				} `json:"value"`
 				// Field identifica el tipo de aviso: "messages" para mensajes y
 				// estados de entrega, "message_template_status_update" para plantillas.
@@ -312,6 +318,15 @@ func WhatsAppHandle(c *gin.Context) {
 			if change.Field == "message_template_status_update" {
 				applyTemplateStatusUpdate(res.DB, res.CompanyID,
 					change.Value.MessageTemplateName, change.Value.Event, change.Value.Reason)
+				continue
+			}
+			// Meta reclasificó la plantilla por su cuenta (p. ej. de Utilidad a
+			// Marketing). Importa reflejarlo: la categoría define el precio del envío
+			// y si el mensaje queda sujeto a los experimentos de marketing de Meta,
+			// que retienen parte de esos envíos.
+			if change.Field == "template_category_update" {
+				applyTemplateCategoryUpdate(res.DB, res.CompanyID,
+					change.Value.MessageTemplateName, change.Value.NewCategory)
 				continue
 			}
 
