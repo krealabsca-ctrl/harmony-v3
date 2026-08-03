@@ -1510,13 +1510,19 @@ export default function InboxPage() {
       const pendientes = Array.from(caja.querySelectorAll('img')).filter(i => !i.complete)
       pendientes.forEach(img => img.addEventListener('load', alFondo, { once: true }))
       return
+      // NOTA sobre las dependencias: hace falta conv?.id además de selectedId. El panel
+      // del chat solo se renderiza cuando la consulta de la conversación resolvió
+      // ({selectedId && conv ? ...}), así que al hacer clic el efecto corre con el
+      // contenedor todavía inexistente y sale por el guard de arriba; cuando el panel
+      // por fin monta, ni messages ni selectedId cambiaron y el efecto NO volvía a
+      // correr. Ese fue el motivo de que los dos intentos anteriores no funcionaran.
     }
 
     const distanciaAlFondo = caja.scrollHeight - caja.scrollTop - caja.clientHeight
     if (distanciaAlFondo < 150) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [messages, selectedId])
+  }, [messages, selectedId, conv?.id])
 
   /* Envía el mensaje si el textarea no está vacío y la ventana no está bloqueada */
   const handleSend = useCallback(() => {
