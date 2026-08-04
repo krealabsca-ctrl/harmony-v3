@@ -11,4 +11,8 @@ type SendResult struct {
 type TemplatePayload struct {
 	Name     string
 	Language string
+	// BodyParams son los valores de los marcadores {{1}}, {{2}}… del cuerpo, en
+	// orden. Meta EXIGE mandarlos: si la plantilla tiene marcadores y el envío no
+	// trae parámetros, rechaza el mensaje por cantidad de parámetros incorrecta.
+	BodyParams []string
 }

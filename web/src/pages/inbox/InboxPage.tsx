@@ -545,7 +545,8 @@ function TransferModal({ conv, departments, agents, onClose, onTransfer }: {
  * @param onSend    - Callback con el texto final de la plantilla lista para enviar
  */
 function TemplateModal({ templates, cargando, onClose, onSend }: {
-  templates: Template[]; cargando: boolean; onClose: () => void; onSend: (body: string) => void
+  templates: Template[]; cargando: boolean; onClose: () => void
+  onSend: (body: string, templateId: number, vars: string[]) => void
 }) {
   // Solo se muestran plantillas aprobadas (maneja tanto minúsculas como mayúsculas)
   const approved = templates.filter(t => t.status === 'approved' || t.status === 'APPROVED')
@@ -690,7 +691,17 @@ function TemplateModal({ templates, cargando, onClose, onSend }: {
         <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 dark:border-gray-700">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Cancelar</button>
           {/* El botón está deshabilitado hasta que haya una plantilla seleccionada y una vista previa no vacía */}
-          <button onClick={() => { if (preview) onSend(preview) }} disabled={!selected || !preview}
+          {/* Se envía la plantilla identificada, no solo su texto. Antes se mandaba
+              únicamente el cuerpo interpolado, así que el servidor lo trataba como
+              mensaje libre y la validación de la ventana de 24h lo rechazaba —
+              justo el caso en que la plantilla es la única forma de escribir.
+              Los valores van en el orden de los marcadores, que es como Meta los
+              espera. */}
+          <button
+            onClick={() => {
+              if (selected && preview) onSend(preview, selected.id, placeholders.map(n => vars[n] ?? ''))
+            }}
+            disabled={!selected || !preview}
             className="px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50"
             style={{ backgroundColor: 'var(--color-primary)' }}>
             Enviar plantilla
@@ -1322,8 +1333,14 @@ export default function InboxPage() {
 
   /* Envío de mensaje de texto: agrega el mensaje al caché local (optimistic-like) y limpia el textarea */
   const sendMutation = useMutation({
-    mutationFn: (text: string) =>
-      api.post(`/conversations/${selectedId}/messages`, { body: text }).then(r => r.data.data),
+    // template_id identifica el envío como plantilla: es lo que permite al servidor
+    // saltarse la validación de la ventana de 24h y lo que hace que a Meta se le
+    // mande la plantilla aprobada en vez de texto libre.
+    mutationFn: ({ text, templateId, vars }: { text: string; templateId?: number; vars?: string[] }) =>
+      api.post(`/conversations/${selectedId}/messages`, {
+        body: text,
+        ...(templateId ? { template_id: templateId, type: 'template', template_vars: vars ?? [] } : {}),
+      }).then(r => r.data.data),
     onSuccess: (msg: Message) => {
       // Inserta el mensaje retornado por el API directamente en el caché sin invalidar todo
       qc.setQueryData<Message[]>(['messages', selectedId], prev => [...(prev ?? []), msg])
@@ -1609,7 +1626,7 @@ export default function InboxPage() {
   /* Envía el mensaje si el textarea no está vacío y la ventana no está bloqueada */
   const handleSend = useCallback(() => {
     if (!body.trim() || !selectedId || inputLocked) return
-    sendMutation.mutate(body.trim())
+    sendMutation.mutate({ text: body.trim() })
   }, [body, selectedId, inputLocked, sendMutation])
 
   /* Enter sin Shift envía el mensaje; Shift+Enter inserta salto de línea */
@@ -1959,7 +1976,10 @@ export default function InboxPage() {
       )}
       {showTemplate && (
         <TemplateModal templates={templates} cargando={cargandoTpls} onClose={() => setShowTemplate(false)}
-          onSend={text => { sendMutation.mutate(text); setShowTemplate(false) }} />
+          onSend={(text, templateId, vars) => {
+            sendMutation.mutate({ text, templateId, vars })
+            setShowTemplate(false)
+          }} />
       )}
       {showBulk && (
         <BulkReassignModal agents={agents} onClose={() => setShowBulk(false)}

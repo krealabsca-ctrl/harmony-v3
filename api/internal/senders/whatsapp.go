@@ -29,16 +29,28 @@ func SendWhatsApp(ch *models.Channel, to, body string, tpl *TemplatePayload) (Se
 
 	if tpl != nil {
 		// Mensaje de plantilla
+		plantilla := map[string]any{
+			"name": tpl.Name,
+			"language": map[string]any{
+				"code": tpl.Language,
+			},
+		}
+		// Valores de los marcadores {{1}}, {{2}}… Meta los exige cuando la plantilla
+		// los tiene: sin esto rechaza el envío por cantidad de parámetros incorrecta.
+		if len(tpl.BodyParams) > 0 {
+			params := make([]map[string]any, 0, len(tpl.BodyParams))
+			for _, v := range tpl.BodyParams {
+				params = append(params, map[string]any{"type": "text", "text": v})
+			}
+			plantilla["components"] = []map[string]any{
+				{"type": "body", "parameters": params},
+			}
+		}
 		payload = map[string]any{
 			"messaging_product": "whatsapp",
 			"to":                to,
 			"type":              "template",
-			"template": map[string]any{
-				"name": tpl.Name,
-				"language": map[string]any{
-					"code": tpl.Language,
-				},
-			},
+			"template":          plantilla,
 		}
 	} else {
 		// Mensaje de texto libre

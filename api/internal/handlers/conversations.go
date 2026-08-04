@@ -380,6 +380,9 @@ func SendMessage(c *gin.Context) {
 		Body       string `json:"body" binding:"required"`
 		Type       string `json:"type"`
 		TemplateID *uint  `json:"template_id"`
+		// Valores de los marcadores {{1}}, {{2}}… en orden. Meta los exige cuando
+		// la plantilla los tiene; sin ellos rechaza el envío.
+		TemplateVars []string `json:"template_vars"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
@@ -460,7 +463,11 @@ func SendMessage(c *gin.Context) {
 					// Meta espera el NOMBRE de la plantilla, no su id. Antes se
 					// mandaba external_template_id (el id numérico que devuelve Meta
 					// al crearla) y el envío fallaba siempre.
-					tplPayload = &senders.TemplatePayload{Name: tpl.Name, Language: tpl.Language}
+					tplPayload = &senders.TemplatePayload{
+						Name:       tpl.Name,
+						Language:   tpl.Language,
+						BodyParams: req.TemplateVars,
+					}
 				}
 			}
 			sendResult, err := senders.SendWhatsApp(conv.Channel, to, req.Body, tplPayload)
