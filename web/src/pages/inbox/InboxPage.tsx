@@ -73,6 +73,15 @@ interface Department { id: number; name: string; color: string }
 interface Agent { id: number; name: string; is_online: boolean; department_id?: number }
 interface Template {
   id: number; name: string; body: string; status: string
+  // Una plantilla de WhatsApp no es solo el cuerpo: puede llevar encabezado, pie y
+  // botones. La vista previa los muestra para que el agente sepa exactamente qué
+  // va a recibir el cliente antes de enviarla.
+  header_type?: string
+  header_content?: string
+  footer?: string
+  category?: string
+  language?: string
+  buttons?: { type?: string; text?: string; value?: string }[]
   components?: { type: string; format?: string; text?: string }[]
 }
 type TabKey = 'all' | 'open' | 'unread'
@@ -591,21 +600,29 @@ function TemplateModal({ templates, cargando, onClose, onSend }: {
             </div>
           ) : (
             <>
+              {/* Desplegable en vez de una lista de opciones: con varias plantillas
+                  habilitadas la lista obligaba a desplazarse dentro de un recuadro
+                  chico. El desplegable las muestra todas de una y ocupa una línea. */}
               <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Plantilla</label>
-                <div className="space-y-1.5 max-h-40 overflow-y-auto border border-gray-200 dark:border-gray-600 rounded-lg p-2">
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  Plantilla <span className="text-gray-400 dark:text-gray-500">({approved.length} disponible{approved.length === 1 ? '' : 's'})</span>
+                </label>
+                <select
+                  value={selected?.id ?? ''}
+                  onChange={e => {
+                    const t = approved.find(x => String(x.id) === e.target.value) ?? null
+                    // Limpiar las variables al cambiar de plantilla: si no, quedarían
+                    // los valores de la anterior en marcadores que no le corresponden.
+                    setSelected(t); setVars({})
+                  }}
+                  className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)]"
+                >
                   {approved.map(t => (
-                    <label key={t.id} className="flex items-start gap-2 cursor-pointer p-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 rounded">
-                      {/* Al cambiar de plantilla se limpian las variables para evitar valores cruzados */}
-                      <input type="radio" name="template" checked={selected?.id === t.id}
-                        onChange={() => { setSelected(t); setVars({}) }} className="mt-0.5" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{t.name}</p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{t.body.slice(0, 60)}…</p>
-                      </div>
-                    </label>
+                    <option key={t.id} value={t.id}>
+                      {t.name}{t.category ? ` · ${t.category}` : ''}
+                    </option>
                   ))}
-                </div>
+                </select>
               </div>
               {placeholders.length > 0 && (
                 <div>
@@ -622,12 +639,49 @@ function TemplateModal({ templates, cargando, onClose, onSend }: {
                   </div>
                 </div>
               )}
+              {/* Vista previa como la va a ver el cliente. Antes solo mostraba el
+                  cuerpo; una plantilla de WhatsApp puede traer además encabezado,
+                  pie y botones, y el agente necesita verlos antes de enviar. */}
               {selected && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Vista previa</label>
-                  <div className="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap">
-                    {preview}
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                    Vista previa
+                  </label>
+                  <div className="bg-[#e7f5e1] dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 rounded-xl rounded-tl-sm px-3 py-2.5 space-y-1.5 shadow-sm">
+                    {selected.header_type === 'text' && selected.header_content && (
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
+                        {selected.header_content}
+                      </p>
+                    )}
+                    {selected.header_type && ['image', 'video', 'document'].includes(selected.header_type) && (
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 bg-black/5 dark:bg-white/5 rounded-lg px-2 py-1.5">
+                        <Paperclip size={12} />
+                        Encabezado con {selected.header_type === 'image' ? 'imagen' : selected.header_type === 'video' ? 'video' : 'documento'}
+                      </div>
+                    )}
+
+                    <p className="text-sm text-gray-800 dark:text-gray-100 whitespace-pre-wrap">{preview}</p>
+
+                    {selected.footer && (
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400 whitespace-pre-wrap">{selected.footer}</p>
+                    )}
+
+                    {(selected.buttons ?? []).length > 0 && (
+                      <div className="pt-1.5 border-t border-emerald-200 dark:border-emerald-900 space-y-1">
+                        {(selected.buttons ?? []).map((btn, i) => (
+                          <div key={i} className="text-center text-xs font-medium text-sky-700 dark:text-sky-300 py-1">
+                            {btn.text || '(botón)'}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
+                  {/* Aviso: solo se pueden completar los marcadores del cuerpo. */}
+                  {placeholders.length > 0 && placeholders.some(n => !vars[n]) && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                      Faltan variables por completar; se enviarán tal cual aparecen.
+                    </p>
+                  )}
                 </div>
               )}
             </>
