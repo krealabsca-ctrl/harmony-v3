@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"io"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -460,11 +461,38 @@ func LaunchCampaign(c *gin.Context) {
 		return
 	}
 
-	// started_at no se registraba: la campaña quedaba "en ejecución" sin fecha de
-	// inicio. El envío real lo hace el worker de jobs, que toma las campañas en este
-	// estado y les manda la plantilla a sus destinatarios pendientes.
+	// El costo se recalcula ACÁ, al iniciar, y no solo al crear.
+	//
+	// Meta reclasifica las plantillas por su cuenta (una de Utilidad puede pasar a
+	// Marketing) y sus tarifas también cambian. Un borrador creado hace días con la
+	// categoría o el precio de entonces se cobraría hoy a la tarifa vigente, así que
+	// congelar el valor de la creación registraba un costo que no era el real.
+	//
+	// Esto NO altera ningún histórico: solo se llega hasta acá desde 'draft', o sea
+	// que aún no se envió ni se cobró nada. Una vez iniciada, el valor queda
+	// congelado y los reportes lo leen tal cual.
 	ahora := time.Now()
-	db.Model(&campaign).Updates(map[string]any{"status": "running", "started_at": ahora})
+	cambios := map[string]any{"status": "running", "started_at": ahora}
+
+	categoria := "marketing" // mismo respaldo que al crear la campaña
+	if campaign.TemplateID != nil {
+		var catActual string
+		db.Raw(`SELECT category FROM message_templates WHERE id = ?`, *campaign.TemplateID).Scan(&catActual)
+		if catActual != "" {
+			categoria = strings.ToLower(catActual)
+		}
+	}
+	costoVigente := lookupWhatsAppPrice(db, campaign.CompanyID, campaign.CountryCode, categoria)
+	if costoVigente != campaign.CostPerMessage {
+		cambios["cost_per_message"] = costoVigente
+		cambios["total_cost"] = costoVigente * float64(campaign.TotalRecipients)
+		log.Printf("campaña %d: costo actualizado al iniciar de %.6f a %.6f (categoría %s)",
+			campaign.ID, campaign.CostPerMessage, costoVigente, categoria)
+		campaign.CostPerMessage = costoVigente
+		campaign.TotalCost = costoVigente * float64(campaign.TotalRecipients)
+	}
+
+	db.Model(&campaign).Updates(cambios)
 	campaign.Status, campaign.StartedAt = "running", &ahora
 	enrichCampaign(db, &campaign)
 
