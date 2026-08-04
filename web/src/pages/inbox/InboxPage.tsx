@@ -535,13 +535,23 @@ function TransferModal({ conv, departments, agents, onClose, onTransfer }: {
  * @param onClose   - Callback para cerrar sin enviar
  * @param onSend    - Callback con el texto final de la plantilla lista para enviar
  */
-function TemplateModal({ templates, onClose, onSend }: {
-  templates: Template[]; onClose: () => void; onSend: (body: string) => void
+function TemplateModal({ templates, cargando, onClose, onSend }: {
+  templates: Template[]; cargando: boolean; onClose: () => void; onSend: (body: string) => void
 }) {
   // Solo se muestran plantillas aprobadas (maneja tanto minúsculas como mayúsculas)
   const approved = templates.filter(t => t.status === 'approved' || t.status === 'APPROVED')
-  const [selected, setSelected] = useState<Template | null>(approved[0] ?? null)
+  const [selected, setSelected] = useState<Template | null>(null)
   const [vars, setVars] = useState<Record<number, string>>({})
+
+  /* Preseleccionar la primera cuando llegan las plantillas.
+   *
+   * Antes esto se hacía en el valor inicial del useState, que React solo evalúa en
+   * el PRIMER render. Como la consulta arranca al abrir el modal, en ese primer
+   * render la lista todavía está vacía, así que quedaba en null para siempre: la
+   * lista se dibujaba pero sin ninguna opción marcada ni vista previa. */
+  useEffect(() => {
+    if (!selected && approved.length > 0) setSelected(approved[0])
+  }, [approved, selected])
 
   /* Extrae los índices únicos de los marcadores {{N}} presentes en la plantilla seleccionada */
   const placeholders = useMemo(() => {
@@ -563,8 +573,22 @@ function TemplateModal({ templates, onClose, onSend }: {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={20} /></button>
         </div>
         <div className="px-6 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
-          {approved.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No hay plantillas aprobadas</p>
+          {/* Mientras carga NO se puede decir "no hay plantillas": la consulta arranca
+              al abrir el modal, así que en los primeros instantes la lista siempre
+              está vacía y el mensaje aparecía aunque sí hubiera plantillas. */}
+          {cargando ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">Cargando plantillas…</p>
+          ) : approved.length === 0 ? (
+            <div className="text-center py-4 space-y-1">
+              <p className="text-sm text-gray-500 dark:text-gray-400">No hay plantillas disponibles</p>
+              {/* El mensaje anterior decía solo "no hay plantillas aprobadas", que no
+                  ayudaba: para que una plantilla aparezca acá tiene que cumplir tres
+                  condiciones, y conviene decir cuáles. */}
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                Para aparecer acá, la plantilla debe estar aprobada por Meta, habilitada
+                para agentes y pertenecer a tu departamento (o a ninguno).
+              </p>
+            </div>
           ) : (
             <>
               <div>
@@ -1208,11 +1232,15 @@ export default function InboxPage() {
   /* Plantillas disponibles para el inbox: solo las aprobadas y habilitadas para agentes.
    * Se carga solo cuando se abre el modal de plantillas (lazy). Endpoint /templates/available
    * es accesible para todos los roles (admin, supervisor, agente). */
-  const { data: templates = [] } = useQuery<Template[]>({
-    queryKey: ['templates-available'],
+  // Clave propia: NewConvModal usa otra consulta con la misma ruta pero distinto
+  // `enabled`. Compartir la clave hacía que ambas se pisaran en la caché.
+  // staleTime 0: si un administrador acaba de aprobar o habilitar una plantilla, el
+  // agente debe verla al abrir el modal, no un minuto después.
+  const { data: templates = [], isFetching: cargandoTpls } = useQuery<Template[]>({
+    queryKey: ['inbox-templates-available'],
     queryFn: () => api.get('/templates/available').then(r => r.data.data ?? []),
     enabled: showTemplate,
-    staleTime: 60000,
+    staleTime: 0,
   })
 
   // ── Lógica de ventana de WhatsApp ─────────────────────────────────────────
@@ -1876,7 +1904,7 @@ export default function InboxPage() {
             assignMutation.mutate({ department_id: deptId || undefined, agent_id: agentId })} />
       )}
       {showTemplate && (
-        <TemplateModal templates={templates} onClose={() => setShowTemplate(false)}
+        <TemplateModal templates={templates} cargando={cargandoTpls} onClose={() => setShowTemplate(false)}
           onSend={text => { sendMutation.mutate(text); setShowTemplate(false) }} />
       )}
       {showBulk && (
