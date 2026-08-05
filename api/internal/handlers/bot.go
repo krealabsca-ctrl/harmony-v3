@@ -28,6 +28,7 @@ type BotConfig struct {
 	Model               string    `json:"model"`
 	Instructions        string    `json:"instructions"`
 	MaxContextChars     int       `json:"max_context_chars"`
+	MaxTokens           int       `json:"max_tokens"`
 	HumanTakeover       bool      `json:"human_takeover"`
 	MaxDailyResponses   int       `json:"max_daily_responses"`
 	ChannelIDs          []byte    `gorm:"type:jsonb" json:"-"`
@@ -69,6 +70,17 @@ type BotDocumentResp struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+// defaultBotModel es el modelo que se usa cuando el departamento no eligió uno.
+// Sonnet 5 es el punto de equilibrio para atención al cliente: mucho más natural que
+// Haiku conversando, sin el costo de Opus. Se puede cambiar por departamento desde la
+// pantalla de configuración del bot.
+//
+// defaultBotMaxTokens es el techo de largo de la respuesta (≈ 3 o 4 párrafos).
+const (
+	defaultBotModel     = "claude-sonnet-5"
+	defaultBotMaxTokens = 1024
+)
+
 // ── Tipos de respuesta ────────────────────────────────────────────────────────
 
 type BotDeptConfig struct {
@@ -78,6 +90,7 @@ type BotDeptConfig struct {
 	Model             string `json:"model"`
 	Instructions      string `json:"instructions"`
 	MaxContextChars   int    `json:"max_context_chars"`
+	MaxTokens         int    `json:"max_tokens"`
 	HumanTakeover     bool   `json:"human_takeover"`
 	MaxDailyResponses int    `json:"max_daily_responses"`
 	ChannelIDs        []int  `json:"channel_ids"`
@@ -127,9 +140,10 @@ func GetBotSettings(c *gin.Context) {
 			DepartmentID:      d.ID,
 			DepartmentName:    d.Name,
 			Enabled:           false,
-			Model:             "claude-opus-4-8",
+			Model:             defaultBotModel,
 			Instructions:      "",
 			MaxContextChars:   80000,
+			MaxTokens:         defaultBotMaxTokens,
 			HumanTakeover:     true,
 			MaxDailyResponses: 50,
 			ChannelIDs:        []int{},
@@ -140,6 +154,7 @@ func GetBotSettings(c *gin.Context) {
 			dc.Model = cfg.Model
 			dc.Instructions = cfg.Instructions
 			dc.MaxContextChars = cfg.MaxContextChars
+			dc.MaxTokens = cfg.MaxTokens
 			dc.HumanTakeover = cfg.HumanTakeover
 			dc.MaxDailyResponses = cfg.MaxDailyResponses
 			dc.UseAllDocs = cfg.UseAllDocs
@@ -151,10 +166,13 @@ func GetBotSettings(c *gin.Context) {
 				}
 			}
 			if dc.Model == "" {
-				dc.Model = "claude-opus-4-8"
+				dc.Model = defaultBotModel
 			}
 			if dc.MaxContextChars == 0 {
 				dc.MaxContextChars = 80000
+			}
+			if dc.MaxTokens == 0 {
+				dc.MaxTokens = defaultBotMaxTokens
 			}
 			if dc.MaxDailyResponses == 0 {
 				dc.MaxDailyResponses = 50
@@ -198,6 +216,7 @@ func SaveBotDepartment(c *gin.Context) {
 		Model             string `json:"model"`
 		Instructions      string `json:"instructions"`
 		MaxContextChars   int    `json:"max_context_chars"`
+		MaxTokens         int    `json:"max_tokens"`
 		HumanTakeover     bool   `json:"human_takeover"`
 		MaxDailyResponses int    `json:"max_daily_responses"`
 		ChannelIDs        []int  `json:"channel_ids"`
@@ -219,7 +238,7 @@ func SaveBotDepartment(c *gin.Context) {
 	channelJSON, _ := marshalJSON(req.ChannelIDs)
 	model := req.Model
 	if model == "" {
-		model = "claude-opus-4-8"
+		model = defaultBotModel
 	}
 	maxCtx := req.MaxContextChars
 	if maxCtx == 0 {
@@ -229,11 +248,24 @@ func SaveBotDepartment(c *gin.Context) {
 	if maxDaily == 0 {
 		maxDaily = 50
 	}
+	// Acotado a [256, 4096]: por debajo de 256 el bot corta frases, y por encima de
+	// 4096 son respuestas demasiado largas para un chat de WhatsApp (y caras de más).
+	maxTok := req.MaxTokens
+	if maxTok == 0 {
+		maxTok = defaultBotMaxTokens
+	}
+	if maxTok < 256 {
+		maxTok = 256
+	}
+	if maxTok > 4096 {
+		maxTok = 4096
+	}
 
 	updates := map[string]any{
 		"model":               model,
 		"instructions":        req.Instructions,
 		"max_context_chars":   maxCtx,
+		"max_tokens":          maxTok,
 		"human_takeover":      req.HumanTakeover,
 		"max_daily_responses": maxDaily,
 		"channel_ids":         channelJSON,
@@ -244,6 +276,7 @@ func SaveBotDepartment(c *gin.Context) {
 		cfg.Model = model
 		cfg.Instructions = req.Instructions
 		cfg.MaxContextChars = maxCtx
+		cfg.MaxTokens = maxTok
 		cfg.HumanTakeover = req.HumanTakeover
 		cfg.MaxDailyResponses = maxDaily
 		cfg.ChannelIDs = channelJSON
@@ -273,8 +306,9 @@ func ToggleBotDepartment(c *gin.Context) {
 		cfg = BotConfig{
 			DepartmentID:      &deptIDUint,
 			IsEnabled:         true,
-			Model:             "claude-opus-4-8",
+			Model:             defaultBotModel,
 			MaxContextChars:   80000,
+			MaxTokens:         defaultBotMaxTokens,
 			HumanTakeover:     true,
 			MaxDailyResponses: 50,
 			UseAllDocs:        true,

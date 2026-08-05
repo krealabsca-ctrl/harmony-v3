@@ -20,6 +20,7 @@ interface DeptConfig {
   model: string
   instructions: string
   max_context_chars: number
+  max_tokens: number
   human_takeover: boolean
   max_daily_responses: number
   channel_ids: number[]
@@ -33,9 +34,9 @@ interface BotSettings {
 }
 
 const MODEL_OPTIONS: Record<string, string> = {
-  'claude-haiku-4-5':  'Haiku 4.5 — rápido y económico',
-  'claude-sonnet-4-6': 'Sonnet 4.6 — equilibrado',
-  'claude-opus-4-8':   'Opus 4.8 — más capaz (recomendado)',
+  'claude-haiku-4-5': 'Haiku 4.5 — el más rápido y barato',
+  'claude-sonnet-5':  'Sonnet 5 — natural y equilibrado (recomendado)',
+  'claude-opus-5':    'Opus 5 — el más capaz, y el más caro',
 }
 
 // ── Toggle confirm modal ───────────────────────────────────────────────────────
@@ -194,6 +195,12 @@ function DeptRow({
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Modelo de IA</label>
             <select value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))}
               className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg pl-3 pr-8 py-2 text-sm focus:ring-2 focus:outline-none">
+              {/* Si el modelo guardado ya no está en la lista (porque salió una
+                  generación nueva), se agrega igual para no cambiarlo en silencio
+                  al primero de la lista la próxima vez que se guarde. */}
+              {form.model && !MODEL_OPTIONS[form.model] && (
+                <option value={form.model}>{form.model} — configurado antes</option>
+              )}
               {Object.entries(MODEL_OPTIONS).map(([v, l]) => (
                 <option key={v} value={v}>{l}</option>
               ))}
@@ -229,6 +236,29 @@ function DeptRow({
             <div className="flex justify-between text-xs text-gray-400 mt-1">
               <span>10,000 — más rápido</span><span>150,000 — más contexto</span>
             </div>
+          </div>
+
+          {/* Largo máximo de la respuesta. Es un techo, no una reserva: solo se paga
+              lo que el bot realmente escriba. Si queda muy bajo, corta frases. */}
+          <div className="px-5 py-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Largo máximo de la respuesta:{' '}
+              <strong className="text-gray-900 dark:text-gray-100">
+                {form.max_tokens.toLocaleString()} tokens
+              </strong>
+            </label>
+            <input type="range" min={256} max={4096} step={256}
+              value={form.max_tokens}
+              onChange={e => setForm(f => ({ ...f, max_tokens: Number(e.target.value) }))}
+              style={{ accentColor: 'var(--color-primary)' }}
+              className="w-full" />
+            <div className="flex justify-between text-xs text-gray-400 mt-1">
+              <span>256 — respuestas muy cortas</span><span>4,096 — respuestas largas</span>
+            </div>
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Es un tope, no un consumo fijo: solo se cobra lo que el bot escriba. Si lo dejás
+              muy bajo, las respuestas largas le llegan cortadas a media frase al cliente.
+            </p>
           </div>
 
           {/* Human takeover */}

@@ -402,10 +402,15 @@ func runBotFlow(db *gorm.DB, conv *models.Conversation, msg *models.Message, isN
 	}
 
 	// Usar valores del config del bot o caer en los defaults razonables.
-	maxTokens := 512
+	// max_tokens es un techo, no una reserva: solo se paga lo que el modelo escriba.
+	// Estaba fijo en 512 y cortaba las respuestas largas a media frase.
+	maxTokens := botCfg.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 1024
+	}
 	model := botCfg.Model
 	if model == "" {
-		model = "claude-haiku-4-5-20251001"
+		model = defaultBotModel
 	}
 
 	// Memoria de conversación: historial reciente (no solo el último mensaje) para mantener
@@ -697,11 +702,25 @@ func callClaudeAPI(apiKey, model, systemPrompt string, messages []anthropicMsg, 
 	for i, m := range messages {
 		msgArr[i] = map[string]any{"role": m.Role, "content": m.Content}
 	}
+	// El system prompt va como bloque con cache_control en vez de como string suelto:
+	// contiene las instrucciones + toda la base de conocimiento, que son idénticas en
+	// cada mensaje. Sin esto Anthropic vuelve a cobrar la base completa cada vez; con
+	// el caché las lecturas siguientes cuestan una décima parte. El historial de la
+	// conversación va aparte (en messages) porque sí cambia turno a turno.
+	//
+	// El caché dura 5 minutos y se comparte entre conversaciones del mismo
+	// departamento (mismo prompt = misma entrada), así que con tráfico sostenido casi
+	// todo son lecturas. Si el prompt queda corto (empresa sin base de conocimiento)
+	// simplemente no se cachea: no es un error, solo no hay ahorro.
 	payload := map[string]any{
 		"model":      model,
 		"max_tokens": maxTokens,
-		"system":     systemPrompt,
-		"messages":   msgArr,
+		"system": []map[string]any{{
+			"type":          "text",
+			"text":          systemPrompt,
+			"cache_control": map[string]any{"type": "ephemeral"},
+		}},
+		"messages": msgArr,
 	}
 	body, _ := json.Marshal(payload)
 
@@ -737,10 +756,24 @@ func callClaudeAPI(apiKey, model, systemPrompt string, messages []anthropicMsg, 
 				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"content"`
+			Usage struct {
+				InputTokens              int `json:"input_tokens"`
+				OutputTokens             int `json:"output_tokens"`
+				CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+				CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+			} `json:"usage"`
 		}
 		if err := json.Unmarshal(respBody, &result); err != nil || len(result.Content) == 0 {
 			return fmt.Errorf("respuesta inválida de Claude")
 		}
+		// Consumo de tokens: es la única forma de verificar que el caché del system
+		// prompt está funcionando. Si "cache_read" se queda en 0 llamada tras llamada,
+		// algo lo está invalidando y se está pagando la base de conocimiento completa
+		// cada vez. Los tokens de entrada son la suma de los tres primeros campos.
+		u := result.Usage
+		log.Printf("bot IA [%s]: entrada=%d cache_escrito=%d cache_leido=%d salida=%d",
+			model, u.InputTokens, u.CacheCreationInputTokens, u.CacheReadInputTokens, u.OutputTokens)
+
 		responseText = result.Content[0].Text
 		return nil
 	})
