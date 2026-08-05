@@ -28,7 +28,6 @@ type Config struct {
 	AzureAccount   string
 	AzureKey       string
 	AzureConnStr   string
-	AnthropicKey   string
 	// reCAPTCHA v3: la site key es pública (se expone al frontend vía /system-config);
 	// la secret NUNCA sale del servidor. Si ambas están vacías, reCAPTCHA queda desactivado.
 	RecaptchaSiteKey string
@@ -56,25 +55,24 @@ func Load() {
 	}
 
 	App = &Config{
-		Port:           getEnv("PORT", "8080"),
-		AppEnv:         appEnv,
-		AppKey:         requireEnv("APP_KEY"),
-		DBHost:         getEnv("DB_HOST", "localhost"),
-		DBPort:         getEnv("DB_PORT", "5432"),
-		DBUser:         getEnv("DB_USER", "harmony"),
-		DBPass:         requireEnv("DB_PASS"),
-		DBName:         getEnv("DB_NAME", "harmony_system"),
-		DBSSLMode:      sslMode,
-		RedisAddr:      getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPassword:  getEnv("REDIS_PASSWORD", ""),
-		JWTSecret:      requireEnvMin("JWT_SECRET", 32),
-		JWTExpiryHours: hours,
-		FrontendURL:    frontendURL,
-		TrustedProxies: parseCSV(getEnv("TRUSTED_PROXIES", "")),
-		AzureAccount:   getEnv("AZURE_STORAGE_ACCOUNT", ""),
-		AzureKey:       getEnv("AZURE_STORAGE_KEY", ""),
-		AzureConnStr:   getEnv("AZURE_STORAGE_CONNECTION_STRING", ""),
-		AnthropicKey:   getEnv("ANTHROPIC_API_KEY", ""),
+		Port:             getEnv("PORT", "8080"),
+		AppEnv:           appEnv,
+		AppKey:           requireEnv("APP_KEY"),
+		DBHost:           getEnv("DB_HOST", "localhost"),
+		DBPort:           getEnv("DB_PORT", "5432"),
+		DBUser:           getEnv("DB_USER", "harmony"),
+		DBPass:           requireEnv("DB_PASS"),
+		DBName:           getEnv("DB_NAME", "harmony_system"),
+		DBSSLMode:        sslMode,
+		RedisAddr:        getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:    getEnv("REDIS_PASSWORD", ""),
+		JWTSecret:        requireEnvMin("JWT_SECRET", 32),
+		JWTExpiryHours:   hours,
+		FrontendURL:      frontendURL,
+		TrustedProxies:   parseCSV(getEnv("TRUSTED_PROXIES", "")),
+		AzureAccount:     getEnv("AZURE_STORAGE_ACCOUNT", ""),
+		AzureKey:         getEnv("AZURE_STORAGE_KEY", ""),
+		AzureConnStr:     getEnv("AZURE_STORAGE_CONNECTION_STRING", ""),
 		RecaptchaSiteKey: getEnv("RECAPTCHA_SITE_KEY", ""),
 		RecaptchaSecret:  getEnv("RECAPTCHA_SECRET", ""),
 	}

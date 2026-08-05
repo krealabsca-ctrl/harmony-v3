@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"harmony-api/internal/circuitbreaker"
-	"harmony-api/internal/config"
 	"harmony-api/internal/database"
 	"harmony-api/internal/models"
 	"harmony-api/internal/ws"
@@ -369,14 +368,11 @@ func runBotFlow(db *gorm.DB, conv *models.Conversation, msg *models.Message, isN
 		return
 	}
 
-	// Resolver la API key: primero la propia de la empresa (cifrada en companies), y si no
-	// tiene, la global del .env. Sin ninguna, se asigna a un agente humano.
-	apiKey := config.App.AnthropicKey
-	var company models.Company
-	if database.SystemDB.First(&company, companyID).Error == nil && company.AnthropicAPIKey != "" {
-		apiKey = company.AnthropicAPIKey
-	}
+	// La clave de Anthropic es siempre la propia de la empresa: cada una usa su cuenta y
+	// paga su consumo. Sin clave propia el bot no corre y la conversación va a un humano.
+	apiKey := companyAnthropicKey(companyID)
 	if apiKey == "" {
+		log.Printf("bot IA: la empresa %d no tiene clave de Anthropic — se asigna a un agente", companyID)
 		assignToAgent(db, conv, companyID)
 		return
 	}

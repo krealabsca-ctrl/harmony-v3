@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"harmony-api/internal/config"
 	"harmony-api/internal/database"
 	"harmony-api/internal/models"
 
@@ -21,19 +20,19 @@ import (
 // ── Modelos ───────────────────────────────────────────────────────────────────
 
 type BotConfig struct {
-	ID                  uint      `gorm:"primarykey" json:"id"`
-	CompanyID           uint      `json:"company_id"`
-	DepartmentID        *uint     `json:"department_id"`
-	IsEnabled           bool      `gorm:"column:is_enabled" json:"is_enabled"`
-	Model               string    `json:"model"`
-	Instructions        string    `json:"instructions"`
-	MaxContextChars     int       `json:"max_context_chars"`
-	MaxTokens           int       `json:"max_tokens"`
-	HumanTakeover       bool      `json:"human_takeover"`
-	MaxDailyResponses   int       `json:"max_daily_responses"`
-	ChannelIDs          []byte    `gorm:"type:jsonb" json:"-"`
-	UseAllDocs          bool      `json:"use_all_docs"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                uint      `gorm:"primarykey" json:"id"`
+	CompanyID         uint      `json:"company_id"`
+	DepartmentID      *uint     `json:"department_id"`
+	IsEnabled         bool      `gorm:"column:is_enabled" json:"is_enabled"`
+	Model             string    `json:"model"`
+	Instructions      string    `json:"instructions"`
+	MaxContextChars   int       `json:"max_context_chars"`
+	MaxTokens         int       `json:"max_tokens"`
+	HumanTakeover     bool      `json:"human_takeover"`
+	MaxDailyResponses int       `json:"max_daily_responses"`
+	ChannelIDs        []byte    `gorm:"type:jsonb" json:"-"`
+	UseAllDocs        bool      `json:"use_all_docs"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 func (BotConfig) TableName() string { return "bot_configs" }
@@ -80,6 +79,20 @@ const (
 	defaultBotModel     = "claude-sonnet-5"
 	defaultBotMaxTokens = 1024
 )
+
+// companyAnthropicKey devuelve la clave de Anthropic de la empresa, o "" si no tiene.
+//
+// Deliberadamente NO cae en la clave global del servidor: cada empresa usa su propia
+// cuenta de Anthropic y paga su propio consumo. Antes existía ese respaldo global, lo
+// que significaba que una empresa sin clave gastaba contra la cuenta del operador de
+// la plataforma sin que nadie lo notara. Sin clave propia, la IA simplemente no corre.
+func companyAnthropicKey(companyID uint) string {
+	var company models.Company
+	if err := database.SystemDB.First(&company, companyID).Error; err != nil {
+		return ""
+	}
+	return strings.TrimSpace(company.AnthropicAPIKey)
+}
 
 // ── Tipos de respuesta ────────────────────────────────────────────────────────
 
@@ -188,13 +201,8 @@ func GetBotSettings(c *gin.Context) {
 		channels = []BotChannel{}
 	}
 
-	// ¿Hay una key usable? La empresa puede tener la suya (cifrada en companies) o caer
-	// en la global del .env. has_api_key indica que el bot tiene con qué responder.
-	hasKey := config.App.AnthropicKey != ""
-	var company models.Company
-	if database.SystemDB.First(&company, c.GetUint("company_id")).Error == nil && company.AnthropicAPIKey != "" {
-		hasKey = true
-	}
+	// ¿Hay una key usable? Solo cuenta la propia de la empresa: no hay respaldo global.
+	hasKey := companyAnthropicKey(c.GetUint("company_id")) != ""
 
 	c.JSON(http.StatusOK, BotSettingsResponse{
 		HasAPIKey:   hasKey,

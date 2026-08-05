@@ -12,7 +12,7 @@ package handlers
 //     - cualquier otro texto → se toma como feedback, regenera con historial y vuelve al paso 4
 //
 // Dependencias externas:
-//   - Anthropic API  (clave global: config.App.AnthropicKey)
+//   - Anthropic API  (clave por empresa: companies.anthropic_api_key)
 //   - OpenAI API     (clave por empresa: pub_settings.openai_api_key)
 //   - Meta Graph API (credenciales por canal WhatsApp: channel.credentials)
 
@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"harmony-api/internal/circuitbreaker"
-	"harmony-api/internal/config"
 	"harmony-api/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -225,7 +224,9 @@ Responde con este JSON exacto (sin markdown):
 			return fmt.Errorf("Claude API %d: %s", resp.StatusCode, string(respBytes))
 		}
 		var claudeResp struct {
-			Content []struct{ Text string `json:"text"` } `json:"content"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
 		}
 		if err := json.Unmarshal(respBytes, &claudeResp); err != nil || len(claudeResp.Content) == 0 {
 			return fmt.Errorf("respuesta inválida de Claude")
@@ -302,7 +303,9 @@ func callDallE(openaiKey, imagePrompt, style, tone string) (string, error) {
 	}
 
 	var result struct {
-		Data []struct{ URL string `json:"url"` } `json:"data"`
+		Data []struct {
+			URL string `json:"url"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(respBytes, &result); err != nil || len(result.Data) == 0 {
 		return "", fmt.Errorf("respuesta inválida de DALL-E")
@@ -424,7 +427,9 @@ func sendWhatsAppApproval(wa *waCredentials, toPhone, caption, imageURL string, 
 			return fmt.Errorf("WhatsApp API %d: %s", resp.StatusCode, string(respBytes))
 		}
 		var result struct {
-			Messages []struct{ ID string `json:"id"` } `json:"messages"`
+			Messages []struct {
+				ID string `json:"id"`
+			} `json:"messages"`
 		}
 		if err := json.Unmarshal(respBytes, &result); err != nil || len(result.Messages) == 0 {
 			return fmt.Errorf("respuesta inválida de WhatsApp")
@@ -472,7 +477,8 @@ func generatePostForAgent(
 	}
 
 	// ── 1. Claude: texto + prompt de imagen ───────────────────────────────────
-	gen, err := callClaudeForCaption(config.App.AnthropicKey, topic, &kit, docs, platforms, revisionHistory)
+	// Clave propia de la empresa (sin respaldo global): cada una paga su consumo.
+	gen, err := callClaudeForCaption(companyAnthropicKey(companyID), topic, &kit, docs, platforms, revisionHistory)
 	if err != nil {
 		// FIX: No fallar silenciosamente — marcar post como error en la DB
 		if postID != 0 {
@@ -535,11 +541,11 @@ func generatePostForAgent(
 	} else {
 		// Actualizar post existente con la nueva versión
 		db.Table("pub_posts").Where("id = ?", postID).Updates(map[string]any{
-			"body":              fullCaption,
-			"image_url":         imageURL,
-			"image_path":        localImagePath,
-			"approval_status":   "pending",
-			"revision_history":  revHistBytes,
+			"body":             fullCaption,
+			"image_url":        imageURL,
+			"image_path":       localImagePath,
+			"approval_status":  "pending",
+			"revision_history": revHistBytes,
 		})
 	}
 
@@ -598,9 +604,9 @@ func TriggerPubGeneration(c *gin.Context) {
 		return
 	}
 
-	// Verificar config de IA
-	if config.App.AnthropicKey == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Clave de Anthropic no configurada"})
+	// Verificar config de IA — la clave es la de la empresa, no hay respaldo global.
+	if companyAnthropicKey(companyID) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Clave de Anthropic no configurada para esta empresa"})
 		return
 	}
 
@@ -671,9 +677,9 @@ func ProcessPubApprovalReply(db *gorm.DB, replyToMsgID, fromPhone, replyText str
 	if normalized == "aprobado" || normalized == "approved" || normalized == "aprobado." {
 		// ── Aprobado → publicar ────────────────────────────────────────────────
 		db.Table("pub_posts").Where("id = ?", post.ID).Updates(map[string]any{
-			"status":                  "published",
-			"approval_status":         "approved",
-			"approval_wa_message_id":  "",
+			"status":                 "published",
+			"approval_status":        "approved",
+			"approval_wa_message_id": "",
 		})
 		return true
 	}
@@ -753,17 +759,17 @@ func GetPubSettingsFull(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"default_currency":       s.DefaultCurrency,
-		"monthly_budget_limit":   s.MonthlyBudgetLimit,
-		"approval_required":      s.ApprovalRequired,
-		"approval_phone":         s.ApprovalPhone,
-		"image_style":            s.ImageStyle,
-		"wa_channel_id":          s.WaChannelID,
-		"has_openai_key":         hasOpenAI,
-		"openai_api_key_masked":  maskedKey,
-		"lead_threshold":         leadThreshold,
-		"lead_whatsapp_numbers":  s.LeadWhatsappNumbers,
-		"lead_keywords":          s.LeadKeywords,
+		"default_currency":      s.DefaultCurrency,
+		"monthly_budget_limit":  s.MonthlyBudgetLimit,
+		"approval_required":     s.ApprovalRequired,
+		"approval_phone":        s.ApprovalPhone,
+		"image_style":           s.ImageStyle,
+		"wa_channel_id":         s.WaChannelID,
+		"has_openai_key":        hasOpenAI,
+		"openai_api_key_masked": maskedKey,
+		"lead_threshold":        leadThreshold,
+		"lead_whatsapp_numbers": s.LeadWhatsappNumbers,
+		"lead_keywords":         s.LeadKeywords,
 	})
 }
 
