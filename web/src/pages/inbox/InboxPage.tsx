@@ -1862,7 +1862,9 @@ export default function InboxPage() {
             <div className="bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-800 px-4 py-2 flex items-center gap-2 text-sm text-red-700 dark:text-red-400 flex-shrink-0">
               <Lock size={14} />
               <span className="font-medium">Ventana de 24h cerrada.</span>
-              <span>Solo podés enviar plantillas de WhatsApp.</span>
+              {/* Meta abre la ventana solo cuando escribe el CLIENTE: enviarle una
+                  plantilla no la reabre. Se aclara acá porque es contraintuitivo. */}
+              <span>Solo podés enviar plantillas. Se reabre cuando el cliente responda.</span>
             </div>
           )}
           {windowWarning && !windowExpired && (
